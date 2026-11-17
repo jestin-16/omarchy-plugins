@@ -1,0 +1,20 @@
+diff --git a/overlay/qmldir b/overlay/qmldir
+index 1f1adc6..dc9322d 100644
+--- a/overlay/qmldir
++++ b/overlay/qmldir
+@@ -1,2 +1,14 @@
+-Overlay 1.0 Overlay.qml
++AppList 1.0 AppList.qml
++AppPicker 1.0 AppPicker.qml
+ DonutCanvas 1.0 DonutCanvas.qml
++EmptyState 1.0 EmptyState.qml
++GoalsPanel 1.0 GoalsPanel.qml
++Hero 1.0 Hero.qml
++HubLabel 1.0 HubLabel.qml
++Meter 1.0 Meter.qml
++Overlay 1.0 Overlay.qml
++Patterns 1.0 Patterns.qml
++StatusBar 1.0 StatusBar.qml
++TrendChart 1.0 TrendChart.qml
++WeekPanel 1.0 WeekPanel.qml
++WeekStrip 1.0 WeekStrip.qml

@@ -1,0 +1,157 @@
+diff --git a/Designs.js b/Designs.js
+index 96e774e..a69eaeb 100644
+--- a/Designs.js
++++ b/Designs.js
+@@ -1,6 +1,6 @@
+ .pragma library
+ 
+-var DEFAULT_ID = "card"
++var DEFAULT_ID = "tokyokawaii"
+ 
+ var CATEGORIES = [
+   { id: "all", name: "All" },
+@@ -17,6 +17,7 @@ var CATEGORIES = [
+ ]
+ 
+ var DESIGNS = [
++  { id: "tokyokawaii", file: "TokyoKawaii.qml", name: "Tokyo Kawaii", description: "Cute Tokyo Night Neko mascot, live weather, music and sparkles", tags: ["fun", "cards", "reactive"] },
+   { id: "card", file: "Card.qml", name: "Greeting Card", description: "Clock, avatar and greeting on a frosted card", tags: ["cards", "clock"] },
+   { id: "classic", file: "Classic.qml", name: "Classic", description: "The stock Omarchy lock screen", tags: ["minimal"] },
+   { id: "editorial", file: "Editorial.qml", name: "Editorial", description: "Big clock bottom left, field underneath", tags: ["type"] },
+diff --git a/Service.qml b/Service.qml
+index 0e5e3aa..d0188d7 100644
+--- a/Service.qml
++++ b/Service.qml
+@@ -3948,6 +3948,8 @@ echo "$out"
+         fingerprintConfigured: root.fingerprintConfigured
+         authenticatingPassword: false
+         failureMessage: root.previewFailure
++        // Display power controls in previews; no action handler is connected.
++        powerActions: root.powerActions
+         failedAttempts: root.previewFailure.length > 0 ? 1 : 0
+         inputEnabled: root.previewVisible && !root.previewUnlocking
+         loadBackground: root.previewVisible
+diff --git a/designs/DesignBase.qml b/designs/DesignBase.qml
+index 6e81748..8fc95f9 100644
+--- a/designs/DesignBase.qml
++++ b/designs/DesignBase.qml
+@@ -80,6 +80,7 @@ Item {
+   // The corners of the base's own chrome: the media strip and the owner
+   // message. Squarish by default; a design with pills (Island) rounds it, a
+   // designer layout sets it from its Corners slider.
++  property string powerFontFamily: "Noto Sans"
+   property int chromeRadius: 6
+   readonly property alias lockMedia: lockMediaSource
+   LiveMedia { id: lockMediaSource }
+@@ -215,11 +216,10 @@ Item {
+     id: powerRow
+     z: 900
+     visible: base.powerActions && !base.snapshotMode
+-    anchors.right: parent.right
++    anchors.horizontalCenter: parent.horizontalCenter
+     anchors.bottom: parent.bottom
+-    anchors.rightMargin: 28
+-    anchors.bottomMargin: 24
+-    spacing: 6
++    anchors.bottomMargin: 30
++    spacing: 12
+ 
+     property string confirming: ""
+ 
+@@ -235,33 +235,35 @@ Item {
+       required property string glyph
+       required property string label
+       readonly property bool asking: powerRow.confirming === action
+-      width: asking ? askLabel.implicitWidth + 24 : 34
+-      height: 34
+-      radius: 17
+-      color: asking ? base.withAlpha(Commons.Color.lock.textError, 0.9)
+-        : base.withAlpha(Commons.Color.lock.text, powerArea.containsMouse ? 0.18 : 0.08)
++      width: Math.max(116, buttonContents.implicitWidth + 32)
++      height: 44
++      radius: 14
++      color: asking ? "#513442" : (powerArea.containsMouse ? "#29364f" : "#1b2436")
++      border.width: 1
++      border.color: asking ? "#ce8699" : (powerArea.containsMouse ? "#728bb8" : "#35415b")
+       Behavior on color { ColorAnimation { duration: 120 } }
+       Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+ 
+-      Text {
++      Row {
++        id: buttonContents
+         anchors.centerIn: parent
+-        visible: !powerButton.asking
+-        text: powerButton.glyph
+-        color: base.withAlpha(Commons.Color.lock.text, 0.75)
+-        font.family: Style.font.family
+-        font.pixelSize: 17
+-      }
+-
+-      Text {
+-        id: askLabel
+-        anchors.centerIn: parent
+-        visible: powerButton.asking
+-        text: powerButton.label + "?"
+-        textFormat: Text.PlainText
+-        color: Commons.Color.background
+-        font.family: Style.font.family
+-        font.pixelSize: Style.font.caption
+-        font.weight: Font.DemiBold
++        spacing: 9
++        Text {
++          text: powerButton.glyph
++          font.family: "JetBrainsMono Nerd Font"
++          font.pixelSize: 17
++          color: powerButton.asking ? "#ffc4cf" : "#9bb8fc"
++          anchors.verticalCenter: parent.verticalCenter
++        }
++        Text {
++          text: powerButton.asking ? powerButton.label + "?" : powerButton.label
++          textFormat: Text.PlainText
++          font.family: base.powerFontFamily
++          font.pixelSize: 12
++          font.weight: Font.Medium
++          color: powerButton.asking ? "#ffe2e8" : "#dce4f7"
++          anchors.verticalCenter: parent.verticalCenter
++        }
+       }
+ 
+       MouseArea {
+diff --git a/designs/PasswordField.qml b/designs/PasswordField.qml
+index 7a02b87..5be91a3 100644
+--- a/designs/PasswordField.qml
++++ b/designs/PasswordField.qml
+@@ -16,6 +16,7 @@ BorderSurface {
+   // instead of visible so surrounding layouts do not reflow between grabs.
+   opacity: lock && lock.snapshotBare === true ? 0 : 1
+   property string placeholder: "Enter password"
++  property string textFontFamily: Style.font.family
+   property bool showLockGlyph: true
+   property bool shakeOnFail: true
+   property int outlineThickness: 2
+@@ -86,7 +87,7 @@ BorderSurface {
+ 
+   TextMetrics {
+     id: dotMetrics
+-    font.family: Style.font.family
++    font.family: field.textFontFamily
+     font.pixelSize: field.dotFontSize
+     font.letterSpacing: field.dotLetterSpacing
+     text: "●".repeat(input.text.length)
+@@ -204,6 +205,7 @@ BorderSurface {
+         ? Math.max(field.fingerprintReserve, field.glyphReserve) : field.fingerprintReserve)
+     verticalAlignment: TextInput.AlignVCenter
+     horizontalAlignment: field.textAlignment
++    font.family: field.textFontFamily
+     font.pixelSize: text.length > 0 && !field.revealed ? Math.max(1, Math.floor(field.dotFontSize * field.dotScale)) : field.fieldFontSize
+     font.letterSpacing: text.length > 0 && !field.revealed ? field.dotLetterSpacing * field.dotScale : 0
+     cursorVisible: activeFocus && text.length > 0 && !field.authenticating && !field.errorState
+@@ -222,7 +224,7 @@ BorderSurface {
+     textFormat: Text.PlainText
+     visible: input.text.length === 0 && !field.snapshotBox
+     color: field.authenticating ? field.textColor : (field.errorState ? field.errorColor : field.mutedColor)
+-    font.family: Style.font.family
++    font.family: field.textFontFamily
+     font.pixelSize: field.fieldFontSize
+     font.italic: !field.authenticating && field.errorState
+     horizontalAlignment: field.textAlignment

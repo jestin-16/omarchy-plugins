@@ -1,0 +1,11 @@
+{
+  "suspend": "Sleep",
+  "reboot": "Restart",
+  "poweroff": "Shut down",
+  "cancel": "Cancel",
+  "working": "Please wait\u2026",
+  "confirm.suspend": "Put the computer to sleep?",
+  "confirm.reboot": "Restart the computer? Unsaved work may be lost.",
+  "confirm.poweroff": "Shut down the computer? Unsaved work may be lost.",
+  "failed": "Could not complete the action. Unlock and try again."
+}

@@ -1,0 +1,5 @@
+{
+  "id": "io.github.sirjul1337.lock-explorer",
+  "upstream": "https://github.com/SirJul1337/omarchy-lock-explorer.git",
+  "base_commit": "dfd252aa1242fda2c1796494232d05584921fb3c"
+}

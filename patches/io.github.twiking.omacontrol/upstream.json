@@ -1,0 +1,5 @@
+{
+  "id": "io.github.twiking.omacontrol",
+  "upstream": "https://github.com/twiking/omacontrol.git",
+  "base_commit": "631da00ec5aaa9866cc593952a393facdf1eb8cf"
+}

@@ -1,0 +1,15 @@
+{
+  "nowPlaying": "NOW PLAYING",
+  "playing": "Playing",
+  "paused": "Paused",
+  "player": "Media player",
+  "nothingPlaying": "Nothing playing",
+  "sources": "MEDIA SOURCES",
+  "previous": "Previous track",
+  "next": "Next track",
+  "play": "Play",
+  "pause": "Pause",
+  "seekUnavailable": "Seeking unavailable",
+  "durationUnavailable": "Waiting for track duration",
+  "timelineUnavailable": "Timeline unavailable"
+}

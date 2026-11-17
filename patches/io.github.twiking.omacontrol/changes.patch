@@ -1,0 +1,81 @@
+diff --git a/lib/setters.sh b/lib/setters.sh
+index 0f3f6ae..9b55860 100644
+--- a/lib/setters.sh
++++ b/lib/setters.sh
+@@ -32,7 +32,7 @@ setting_current() {
+     text-scale) omarchy display text size 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)?' | head -n1 ;;
+     nightlight) nightlight_enabled ;;
+     bar-position) jq -r '.bar.position // "top"' <<<"$(read_shell_json)" ;;
+-    bar-transparent) jq -r '((.bar.transparent // false) | tostring)' <<<"$(read_shell_json)" ;;
++    bar-transparent) jq -r '((((.bar.background // (if .bar.transparent == true then "none" else "opaque" end)) == "none")) | tostring)' <<<"$(read_shell_json)" ;;
+     bar-center-anchor) jq -r '.bar.centerAnchor // ""' <<<"$(read_shell_json)" ;;
+     bar-active-switch-count|bar-network-warning|bar-battery-warnings)
+       jq -r --arg field "$(gear_field "$1")" '[ (.bar.layout // {})[][]?
+diff --git a/lib/state.sh b/lib/state.sh
+index 205eabb..b0cd1f6 100644
+--- a/lib/state.sh
++++ b/lib/state.sh
+@@ -50,7 +50,7 @@ state_changed() {
+ # or the other depending on which read answered last.
+ BAR_STATE_JQ='{
+   position: (($cfg.bar.position // "top") | tostring),
+-  transparent: (($cfg.bar.transparent // false) == true),
++  transparent: ((($cfg.bar.background // (if $cfg.bar.transparent == true then "none" else "opaque" end)) == "none")),
+   centerAnchor: (($cfg.bar.centerAnchor // "") | tostring),
+   # The gear absent from the bar has no entry, and reads as every default.
+   gear: ([ ($cfg.bar.layout // {})[][]? | select(.id == "io.github.twiking.omacontrol") ]
+diff --git a/lib/usage.sh b/lib/usage.sh
+index 9cf931f..491e88d 100644
+--- a/lib/usage.sh
++++ b/lib/usage.sh
+@@ -9,7 +9,7 @@
+ # exactly that record and nothing else; so does this page. Recomputing any of
+ # it here would be a second answer to a question that already has one.
+ 
+-USAGE_PROVIDERS=(claude codex fireworks)
++USAGE_PROVIDERS=(agy claude codex fireworks)
+ 
+ # The provider this machine actually sends agent work to, which the menu
+ # already tracks as the default agent.
+@@ -17,6 +17,7 @@ usage_provider() {
+   local current
+   current=$(agents_state | jq -r '.current // ""' 2>/dev/null)
+   case ${current:-} in
++    *agy*|*antigravity*) printf 'agy' ;;
+     *claude*) printf 'claude' ;;
+     *codex*) printf 'codex' ;;
+     *fireworks*) printf 'fireworks' ;;
+@@ -41,6 +42,11 @@ usage_first_ready() {
+ usage_record() {
+   local provider=${1:-}
+   [[ -n $provider ]] || { echo '{}'; return; }
++  local cached="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/agents/usage/$provider.json"
++  if [[ -f $cached ]]; then
++    cat "$cached"
++    return
++  fi
+   command -v "omarchy-agent-usage-$provider" >/dev/null 2>&1 || { echo '{}'; return; }
+   # A longer bound than the other readers: this one can be reading a year of
+   # transcripts on a first run.
+@@ -100,7 +106,7 @@ usage_cmd() {
+       local provider=${1:-}
+       [[ -n $provider ]] || provider=$(usage_provider)
+       [[ -n $provider ]] || die "no agent usage provider on this machine"
+-      timeout 60 "omarchy-agent-usage-$provider" --force >/dev/null 2>&1 ;;
++      timeout 60 omarchy-agent-usage-update --force "$provider" >/dev/null 2>&1 || timeout 60 "omarchy-agent-usage-$provider" --force >/dev/null 2>&1 ;;
+     *) die "usage: omacontrol usage poll|refresh [provider]" ;;
+   esac
+ }
+diff --git a/sections/UsageSection.qml b/sections/UsageSection.qml
+index 9a790b2..42ad4fb 100644
+--- a/sections/UsageSection.qml
++++ b/sections/UsageSection.qml
+@@ -73,7 +73,7 @@ Ui.SectionBody {
+ 
+     Ui.ReadingRow {
+       label: "No agent usage to report"
+-      description: "Nothing on this machine collects it. Omarchy ships collectors for Claude Code, Codex and Fireworks."
++      description: "Nothing on this machine collects it. Omarchy ships collectors for Antigravity, Claude Code, Codex and Fireworks."
+     }
+   }
+ 

@@ -1,0 +1,5 @@
+{
+  "id": "postman.omascreentime",
+  "upstream": "https://github.com/kennetpostigo/omascreentime",
+  "base_commit": "f50be305c4aebe879c6b1861842f7acdc186bc94"
+}

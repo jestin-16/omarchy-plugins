@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "jestin.menu",
+  "name": "Launcher",
+  "version": "1.1.0",
+  "author": "Omarchy",
+  "description": "Minimalist, aesthetic theme-aware launcher for Super+Space",
+  "kinds": [
+    "menu",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "menu": "Menu.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Launcher",
+    "description": "Launches the Omarchy menu",
+    "category": "Compositor",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.menu"
+  }
+}

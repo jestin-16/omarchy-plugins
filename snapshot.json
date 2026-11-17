@@ -1,0 +1,47 @@
+{
+  "snapshot_date": "2026-11-17",
+  "custom_plugins": [
+    {
+      "id": "jestin.agents",
+      "version": "1.0.0",
+      "cloned_from": "omarchy.agents"
+    },
+    {
+      "id": "jestin.lock",
+      "version": "1.0.0",
+      "cloned_from": "omarchy.lock"
+    },
+    {
+      "id": "jestin.media",
+      "version": "1.0.0",
+      "cloned_from": "omarchy.media"
+    },
+    {
+      "id": "jestin.menu",
+      "version": "1.1.0",
+      "cloned_from": "omarchy.menu"
+    },
+    {
+      "id": "jestin.workspaces",
+      "version": "1.0.0",
+      "cloned_from": "omarchy.workspaces"
+    }
+  ],
+  "upstream_patches": [
+    {
+      "id": "io.github.sirjul1337.lock-explorer",
+      "upstream": "https://github.com/SirJul1337/omarchy-lock-explorer.git",
+      "base_commit": "dfd252aa1242fda2c1796494232d05584921fb3c"
+    },
+    {
+      "id": "io.github.twiking.omacontrol",
+      "upstream": "https://github.com/twiking/omacontrol.git",
+      "base_commit": "631da00ec5aaa9866cc593952a393facdf1eb8cf"
+    },
+    {
+      "id": "postman.omascreentime",
+      "upstream": "https://github.com/kennetpostigo/omascreentime",
+      "base_commit": "f50be305c4aebe879c6b1861842f7acdc186bc94"
+    }
+  ]
+}
