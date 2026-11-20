@@ -857,9 +857,7 @@ Panel {
   readonly property string heroPhrase: {
     if (addStage !== "" || blankSlate) return addHeading
     if (allTimeTotalTokens > 0) {
-      var txt = usage.formatTokenCount(allTimeTotalTokens) + " total tokens"
-      if (totalTodayTokens > 0) txt += " · " + usage.formatTokenCount(totalTodayTokens) + " today"
-      return txt
+      return usage.formatTokenCount(allTimeTotalTokens) + " total tokens"
     }
     return shownPhrase !== "" ? shownPhrase : Commons.I18n.t("agents.subscriptions")
   }
@@ -892,6 +890,9 @@ Panel {
       var count = Number(providers[i].syncDeviceCount || 0)
       if (providers[i].syncEnabled && count > 0)
         return Commons.I18n.tn("agents.merged", count).arg(Commons.I18n.formatNumber(count))
+    }
+    if (allTimeTotalTokens > 0) {
+      return usage.formatTokenCount(allTimeTotalTokens) + " total tokens all-time"
     }
     return ""
   }
@@ -1601,7 +1602,7 @@ Panel {
       Item {
         id: providerTokenRow
         width: parent.width
-        implicitHeight: Math.max(tokenTotalText.implicitHeight, tokenTodayText.implicitHeight)
+        implicitHeight: tokenTotalText.implicitHeight
         height: implicitHeight
         visible: section.provider && root.providerTotalTokens(section.provider) > 0
 
@@ -1617,19 +1618,7 @@ Panel {
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
           textFormat: Text.PlainText
-          text: usage.formatTokenCount(root.providerTotalTokens(section.provider)) + " tokens total"
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-        }
-
-        Text {
-          id: tokenTodayText
-          anchors.right: parent.right
-          anchors.verticalCenter: parent.verticalCenter
-          visible: Number(section.provider ? section.provider.todayTotalTokens : 0) > 0
-          textFormat: Text.PlainText
-          text: usage.formatTokenCount(Number(section.provider ? section.provider.todayTotalTokens : 0)) + " today"
+          text: usage.formatTokenCount(root.providerTotalTokens(section.provider)) + " total tokens"
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -1733,7 +1722,7 @@ Panel {
     Item {
       id: fallbackTokenRow
       width: parent.width
-      implicitHeight: Math.max(fallbackTotalText.implicitHeight, fallbackTodayText.implicitHeight)
+      implicitHeight: fallbackTotalText.implicitHeight
       height: implicitHeight
       visible: section.provider && root.providerTotalTokens(section.provider) > 0 && (section.multi || section.windows.length === 0)
 
@@ -1749,19 +1738,7 @@ Panel {
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
-        text: usage.formatTokenCount(root.providerTotalTokens(section.provider)) + " tokens total"
-        color: root.dim
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-      }
-
-      Text {
-        id: fallbackTodayText
-        anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        visible: Number(section.provider ? section.provider.todayTotalTokens : 0) > 0
-        textFormat: Text.PlainText
-        text: usage.formatTokenCount(Number(section.provider ? section.provider.todayTotalTokens : 0)) + " today"
+        text: usage.formatTokenCount(root.providerTotalTokens(section.provider)) + " total tokens"
         color: root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
