@@ -771,14 +771,98 @@ Panel {
     if (sessions > 0) phrases.push(Commons.I18n.tn("agents.sessionsToday", sessions).arg(Commons.I18n.formatNumber(sessions)))
     return phrases
   }
+
+  function providerTotalTokens(p) {
+    if (!p) return 0
+    var models = p.modelUsage || {}
+    var total = 0
+    for (var id in models) {
+      var bucket = models[id] || {}
+      total += Number(bucket.inputTokens || 0) + Number(bucket.outputTokens || 0)
+        + Number(bucket.cacheReadInputTokens || 0) + Number(bucket.cacheCreationInputTokens || 0)
+    }
+    if (total === 0 && Array.isArray(p.recentDays)) {
+      for (var i = 0; i < p.recentDays.length; i++) {
+        total += Number(p.recentDays[i].messageCount || 0)
+      }
+    }
+    return Math.max(total, Number(p.todayTotalTokens || 0))
+  }
+
+  function providerTokenTooltip(p) {
+    if (!p) return ""
+    var lines = []
+    var total = providerTotalTokens(p)
+    if (total > 0) {
+      lines.push((p.providerName || "Agent") + ": " + usage.formatTokenCount(total) + " tokens total")
+    }
+    var today = Number(p.todayTotalTokens || 0)
+    if (today > 0) {
+      var todayLine = usage.formatTokenCount(today) + " tokens today"
+      var prompts = Number(p.todayPrompts || 0)
+      if (prompts > 0) todayLine += " (" + prompts + (prompts === 1 ? " prompt" : " prompts") + ")"
+      lines.push(todayLine)
+    }
+    var days = p.recentDays || []
+    var week = 0
+    for (var i = 0; i < days.length; i++) {
+      week += Number(days[i].messageCount || 0)
+    }
+    if (week > 0 && week !== today) {
+      lines.push(usage.formatTokenCount(week) + " tokens (7 days)")
+    }
+    var models = p.modelUsage || {}
+    var modelKeys = Object.keys(models)
+    if (modelKeys.length > 0) {
+      lines.push("")
+      lines.push("Models:")
+      for (var k = 0; k < modelKeys.length; k++) {
+        var mId = modelKeys[k]
+        var b = models[mId] || {}
+        var mTotal = Number(b.inputTokens || 0) + Number(b.outputTokens || 0)
+          + Number(b.cacheReadInputTokens || 0) + Number(b.cacheCreationInputTokens || 0)
+        if (mTotal > 0) {
+          lines.push("  " + usage.friendlyModelName(mId) + ": " + usage.formatTokenCount(mTotal))
+        }
+      }
+    }
+    return lines.join("\n")
+  }
+
+  readonly property real allTimeTotalTokens: {
+    var rev = usage.dataRevision
+    var sum = 0
+    var list = usage.enabledProviders || []
+    for (var i = 0; i < list.length; i++) {
+      sum += providerTotalTokens(list[i])
+    }
+    return sum
+  }
+
+  readonly property real totalTodayTokens: {
+    var rev = usage.dataRevision
+    var sum = 0
+    var list = usage.enabledProviders || []
+    for (var i = 0; i < list.length; i++) {
+      sum += Number(list[i].todayTotalTokens || 0)
+    }
+    return sum
+  }
+
   property int phraseIndex: 0
   // Every record that lands rebuilds the phrases, and opening the panel
   // refreshes each agent in turn. Indexing the live list would swap the line
   // on each of those, so the hero holds what it shows until the next fade.
   property string shownPhrase: ""
-  readonly property string heroPhrase: addStage !== "" || blankSlate
-    ? addHeading
-    : (shownPhrase !== "" ? shownPhrase : Commons.I18n.t("agents.subscriptions"))
+  readonly property string heroPhrase: {
+    if (addStage !== "" || blankSlate) return addHeading
+    if (allTimeTotalTokens > 0) {
+      var txt = usage.formatTokenCount(allTimeTotalTokens) + " total tokens"
+      if (totalTodayTokens > 0) txt += " · " + usage.formatTokenCount(totalTodayTokens) + " today"
+      return txt
+    }
+    return shownPhrase !== "" ? shownPhrase : Commons.I18n.t("agents.subscriptions")
+  }
 
   function showPhrase() {
     var n = summaryPhrases.length
@@ -1487,47 +1571,6 @@ Panel {
       onClicked: root.signInAgain(section.provider, null)
     }
 
-    Item {
-      width: parent.width
-      implicitHeight: Math.max(tokenStatsText.implicitHeight, tokenModelText.implicitHeight)
-      visible: !section.multi && section.provider && (Number(section.provider.todayTotalTokens || 0) > 0 || Number(section.provider.todayPrompts || 0) > 0)
-
-      Text {
-        id: tokenStatsText
-        anchors.left: parent.left
-        anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.PlainText
-        text: {
-          if (!section.provider) return ""
-          var tokens = Number(section.provider.todayTotalTokens || 0)
-          var prompts = Number(section.provider.todayPrompts || 0)
-          var parts = []
-          if (tokens > 0) parts.push(usage.formatTokenCount(tokens) + " tokens today")
-          if (prompts > 0) parts.push(prompts + (prompts === 1 ? " prompt" : " prompts"))
-          return parts.join(" · ")
-        }
-        color: root.foreground
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-      }
-
-      Text {
-        id: tokenModelText
-        anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.PlainText
-        text: {
-          if (!section.provider || !section.provider.todayTokensByModel) return ""
-          var models = Object.keys(section.provider.todayTokensByModel)
-          return models.length > 0 ? models[0] : ""
-        }
-        color: root.dim
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-      }
-    }
-
-
     Column {
       visible: !section.multi && section.windows.length > 0
       width: parent.width
@@ -1553,6 +1596,44 @@ Panel {
         color: root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
+      }
+
+      Item {
+        id: providerTokenRow
+        width: parent.width
+        implicitHeight: Math.max(tokenTotalText.implicitHeight, tokenTodayText.implicitHeight)
+        height: implicitHeight
+        visible: section.provider && root.providerTotalTokens(section.provider) > 0
+
+        HoverHandler { id: tokenRowHover }
+
+        PanelToolTip {
+          visible: tokenRowHover.hovered && !!section.provider
+          text: root.providerTokenTooltip(section.provider)
+        }
+
+        Text {
+          id: tokenTotalText
+          anchors.left: parent.left
+          anchors.verticalCenter: parent.verticalCenter
+          textFormat: Text.PlainText
+          text: usage.formatTokenCount(root.providerTotalTokens(section.provider)) + " tokens total"
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+
+        Text {
+          id: tokenTodayText
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          visible: Number(section.provider ? section.provider.todayTotalTokens : 0) > 0
+          textFormat: Text.PlainText
+          text: usage.formatTokenCount(Number(section.provider ? section.provider.todayTotalTokens : 0)) + " today"
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
       }
     }
 
@@ -1646,6 +1727,44 @@ Panel {
             }
           }
         }
+      }
+    }
+
+    Item {
+      id: fallbackTokenRow
+      width: parent.width
+      implicitHeight: Math.max(fallbackTotalText.implicitHeight, fallbackTodayText.implicitHeight)
+      height: implicitHeight
+      visible: section.provider && root.providerTotalTokens(section.provider) > 0 && (section.multi || section.windows.length === 0)
+
+      HoverHandler { id: fallbackTokenHover }
+
+      PanelToolTip {
+        visible: fallbackTokenHover.hovered && !!section.provider
+        text: root.providerTokenTooltip(section.provider)
+      }
+
+      Text {
+        id: fallbackTotalText
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        textFormat: Text.PlainText
+        text: usage.formatTokenCount(root.providerTotalTokens(section.provider)) + " tokens total"
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      Text {
+        id: fallbackTodayText
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        visible: Number(section.provider ? section.provider.todayTotalTokens : 0) > 0
+        textFormat: Text.PlainText
+        text: usage.formatTokenCount(Number(section.provider ? section.provider.todayTotalTokens : 0)) + " today"
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
       }
     }
   }
@@ -2093,13 +2212,8 @@ Panel {
       elide: Text.ElideRight
     }
 
-    TextMetrics {
-      id: compactPercentMetrics
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.bodySmall
-      text: "100%"
-    }
-
+    // Sized to the widest time left ("19h 40m"), so every meter ends in the
+    // same place.
     TextMetrics {
       id: compactValueMetrics
       font.family: root.fontFamily
@@ -2109,33 +2223,16 @@ Panel {
 
     Meter {
       anchors.left: compactTitle.right
-      anchors.right: compactPercent.left
-      anchors.rightMargin: Style.space(10)
+      anchors.right: compactValue.left
+      anchors.rightMargin: Style.space(20)
       anchors.verticalCenter: parent.verticalCenter
       value: compact.window ? compact.window.percent : -1
       alarming: compact.alarming
       markers: compact.scoped
     }
 
-    Text {
-      id: compactPercent
-      width: Math.ceil(compactPercentMetrics.advanceWidth)
-      anchors.right: compactValue.left
-      anchors.rightMargin: Style.space(12)
-      anchors.verticalCenter: parent.verticalCenter
-      textFormat: Text.PlainText
-      horizontalAlignment: Text.AlignRight
-      text: {
-        if (!compact.window) return ""
-        var pct = Number(compact.window.percent)
-        if (pct === 0) return "<1%"
-        return Math.round(pct * 100) + "%"
-      }
-      color: compact.alarming ? root.urgent : root.foreground
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.bodySmall
-    }
-
+    // How long until the window resets. The meter says how full it is; the
+    // exact percentage is in the row's tooltip.
     Text {
       id: compactValue
       width: Math.ceil(compactValueMetrics.advanceWidth)
