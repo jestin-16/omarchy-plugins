@@ -854,13 +854,9 @@ Panel {
   // refreshes each agent in turn. Indexing the live list would swap the line
   // on each of those, so the hero holds what it shows until the next fade.
   property string shownPhrase: ""
-  readonly property string heroPhrase: {
-    if (addStage !== "" || blankSlate) return addHeading
-    if (allTimeTotalTokens > 0) {
-      return usage.formatTokenCount(allTimeTotalTokens) + " total tokens"
-    }
-    return shownPhrase !== "" ? shownPhrase : Commons.I18n.t("agents.subscriptions")
-  }
+  readonly property string heroPhrase: addStage !== "" || blankSlate
+    ? addHeading
+    : (shownPhrase !== "" ? shownPhrase : Commons.I18n.t("agents.subscriptions"))
 
   function showPhrase() {
     var n = summaryPhrases.length
