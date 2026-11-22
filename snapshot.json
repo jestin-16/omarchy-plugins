@@ -1,10 +1,14 @@
 {
-  "snapshot_date": "2026-11-17",
+  "snapshot_date": "2026-11-22",
   "custom_plugins": [
     {
       "id": "jestin.agents",
       "version": "1.0.0",
       "cloned_from": "omarchy.agents"
+    },
+    {
+      "id": "jestin.breathing-borders",
+      "version": "1.0.0"
     },
     {
       "id": "jestin.lock",
@@ -20,6 +24,11 @@
       "id": "jestin.menu",
       "version": "1.1.0",
       "cloned_from": "omarchy.menu"
+    },
+    {
+      "id": "jestin.network",
+      "version": "1.0.0",
+      "cloned_from": "omarchy.network"
     },
     {
       "id": "jestin.workspaces",

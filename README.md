@@ -8,9 +8,11 @@ extend Omarchy's Quickshell desktop and require a compatible Omarchy installatio
 | Folder | Purpose |
 | --- | --- |
 | `plugins/jestin.agents` | Agent usage and subscription panel |
+| `plugins/jestin.breathing-borders` | Breathing opacity for panel borders |
 | `plugins/jestin.lock` | Custom lock screen with companion and status components |
-| `plugins/jestin.media` | Media service and now-playing widget |
+| `plugins/jestin.media` | Media service and now-playing widget with synced lyrics |
 | `plugins/jestin.menu` | Compact searchable Omarchy menu |
+| `plugins/jestin.network` | Wi-Fi list and connection state widget |
 | `plugins/jestin.workspaces` | Workspace indicators |
 
 These are personal copies of Omarchy plugins, with their original author and

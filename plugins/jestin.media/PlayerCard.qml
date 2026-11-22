@@ -1,16 +1,42 @@
 import QtQuick
-import QtQuick.Effects
+import QtCore
+import Quickshell
+import Quickshell.Services.Pipewire
 import qs.Ui
 import qs.Commons
 import qs.Commons as Commons
+import "vendor/lyrics/Model.js" as LyricsModel
 
 Column {
   id: panel
   required property var host
   readonly property var player: host.activePlayer
-  readonly property color ink: "#b6bdcf"
+  readonly property color ink: "#a8b1c2"
+  property bool showVolume: false
+  property bool showLyrics: false
   readonly property color accent: Commons.Color.accent
-  readonly property color capsuleInk: "#f0f1f4"
+  readonly property color capsuleInk: "#edf2fc"
+  readonly property var output: Pipewire.defaultAudioSink
+  readonly property var outputAudio: output ? output.audio : null
+  PwObjectTracker { objects: panel.output ? [panel.output] : [] }
+  Settings {
+    id: preferences
+    location: "file://" + Quickshell.env("HOME") + "/.local/state/omarchy/media-card.ini"
+    property bool lyricsOnline: true
+  }
+  LyricsSource {
+    id: lyrics
+    player: panel.player
+    online: preferences.lyricsOnline
+    panelOpen: panel.host.popupOpen && panel.showLyrics
+    position: panel.elapsed
+  }
+  function setVolume(value) {
+    if (!outputAudio) return
+    outputAudio.muted = false
+    outputAudio.volume = Math.max(0, Math.min(1, value))
+  }
+  function toggleMute() { if (outputAudio) outputAudio.muted = !outputAudio.muted }
   // Preserve a known duration if an app temporarily drops it after seeking.
   // Never reuse it across tracks or sources.
   property real trackDuration: 0
@@ -27,6 +53,7 @@ Column {
     if (seekBar) seekBar.dragging = false
     updateDuration()
     refreshPosition()
+    if (trackReveal && host.popupOpen) trackReveal.restart()
   }
   property real elapsed: 0
   property double seekDeadline: 0
@@ -73,7 +100,7 @@ Column {
     onTriggered: { panel.seekDeadline = 0; panel.refreshPosition() }
   }
   Timer {
-    interval: 1000; repeat: true
+    interval: 500; repeat: true
     running: panel.host.popupOpen && !!panel.player && panel.player.positionSupported && panel.host.isPlaying
     triggeredOnStart: true
     onTriggered: panel.refreshPosition()
@@ -83,168 +110,114 @@ Column {
     color: panel.ink
     font.family: Style.font.family
     font.pixelSize: Style.font.body
+    Behavior on color { ColorAnimation { duration: Style.duration(140) } }
   }
 
-  // Wide, glossy capsule with the compact top controls and album row from the reference.
+  // Animate the actual layout height so the popup follows the drawer.
+  // Keep it alive while closing, but stop accepting input immediately.
+  component Reveal: Item {
+    id: drawer
+    default property alias contents: drawerBody.data
+    property bool expanded: false
+    property real spacing: 0
+    width: parent.width
+    height: expanded ? drawerBody.implicitHeight : 0
+    implicitHeight: height
+    opacity: expanded ? 1 : 0
+    visible: height > 0
+    enabled: expanded
+    clip: true
+    property Column body: Column {
+      id: drawerBody
+      parent: drawer
+      width: drawer.width
+      spacing: drawer.spacing
+    }
+    Behavior on height {
+      enabled: panel.host.popupOpen
+      NumberAnimation { duration: Style.duration(drawer.expanded ? 220 : 150); easing.type: Easing.OutCubic }
+    }
+    Behavior on opacity {
+      enabled: panel.host.popupOpen
+      NumberAnimation { duration: Style.duration(drawer.expanded ? 180 : 100); easing.type: Easing.OutCubic }
+    }
+  }
+
+  ParallelAnimation {
+    id: trackReveal
+    NumberAnimation { target: metadataRow; property: "opacity"; from: 0.55; to: 1; duration: Style.duration(180); easing.type: Easing.OutCubic }
+    NumberAnimation { target: metadataRow; property: "scale"; from: 0.985; to: 1; duration: Style.duration(180); easing.type: Easing.OutCubic }
+  }
+
   Rectangle {
     width: parent.width
-    height: Style.space(198)
-    radius: Style.space(30)
-    clip: true
-    gradient: Gradient {
-      orientation: Gradient.Vertical
-      GradientStop { position: 0; color: "#17181d" }
-      GradientStop { position: 0.45; color: "#08090c" }
-      GradientStop { position: 1; color: "#030405" }
-    }
+    height: content.implicitHeight + Style.space(32)
+    radius: Style.space(10)
+    color: "#07090c"
     border.width: 1
-    border.color: Qt.rgba(1, 1, 1, 0.22)
+    border.color: Qt.alpha(panel.accent, 0.8)
 
-    // Soft reflection gives the black surface a glassy, curved highlight.
-    Rectangle {
-      x: parent.width * 0.30; y: -parent.height * 0.57
-      width: parent.width * 0.64; height: parent.height * 0.92
-      radius: height / 2; rotation: -12
-      opacity: 0.7
-      gradient: Gradient {
-        GradientStop { position: 0; color: Qt.rgba(1, 1, 1, 0.11) }
-        GradientStop { position: 1; color: Qt.rgba(1, 1, 1, 0) }
-      }
-    }
+    Column {
+      id: content
+      x: Style.space(18); y: Style.space(16)
+      width: parent.width - Style.space(36)
+      spacing: 0
 
-    Row {
-      id: topControls
-      anchors.top: parent.top
-      anchors.left: parent.left
-      anchors.right: parent.right
-      anchors.topMargin: Style.space(12)
-      anchors.leftMargin: Style.space(17)
-      anchors.rightMargin: Style.space(17)
-      height: Style.space(32)
-      spacing: Style.space(11)
-
-      Label { text: panel.host.playerIcon(panel.player); color: panel.accent; font.pixelSize: Style.font.icon; anchors.verticalCenter: parent.verticalCenter }
-      Label {
-        text: panel.host.playerName(panel.player).toUpperCase()
-        opacity: 0.95
-        font.pixelSize: Style.font.caption
-        font.weight: Font.DemiBold
-        anchors.verticalCenter: parent.verticalCenter
-      }
-      Item { width: 1; height: 1 }
       Row {
-        spacing: Style.space(3)
-        anchors.verticalCenter: parent.verticalCenter
-        Repeater {
-          model: [5, 10, 7, 13, 6]
-          Rectangle {
-            required property int modelData
-            width: Style.space(3); height: Style.space(modelData); radius: width / 2
-            anchors.verticalCenter: parent.verticalCenter
-            color: panel.host.isPlaying ? panel.accent : Qt.alpha(panel.ink, 0.45)
-            SequentialAnimation on height {
-              running: panel.host.popupOpen && panel.host.isPlaying && !Style.reduceMotion
-              loops: Animation.Infinite
-              NumberAnimation { to: Style.space(4); duration: Style.duration(260); easing.type: Easing.OutCubic }
-              NumberAnimation { to: Style.space(modelData); duration: Style.duration(260); easing.type: Easing.OutCubic }
-            }
+        id: metadataRow
+        transformOrigin: Item.Left
+        width: parent.width
+        height: Style.space(84)
+        spacing: Style.space(14)
+        Rectangle {
+          id: artwork
+          width: Style.space(84); height: width
+          radius: Style.space(4)
+          color: "#121823"
+          border.width: 1; border.color: Qt.alpha(panel.accent, 0.4)
+          Label {
+            anchors.centerIn: parent
+            visible: cover.status !== Image.Ready
+            text: "󰎆"; color: Qt.alpha(panel.accent, 0.75); font.pixelSize: Style.space(26)
+          }
+          SizedImage {
+            id: cover
+            anchors.fill: parent; anchors.margins: 2
+            crop: true
+            url: panel.player && panel.player.trackArtUrl ? panel.player.trackArtUrl : ""
+            opacity: status === Image.Ready ? 1 : 0
+            visible: opacity > 0
+            Behavior on opacity { NumberAnimation { duration: Style.duration(180); easing.type: Easing.OutCubic } }
+          }
+        }
+        Column {
+          width: parent.width - artwork.width - Style.space(14)
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(6)
+          Label {
+            width: parent.width
+            text: panel.host.title || strings.t("nothingPlaying")
+            font.pixelSize: Style.space(15); font.weight: Font.DemiBold
+            color: panel.capsuleInk; elide: Text.ElideRight
+          }
+          Label {
+            width: parent.width
+            text: LyricsModel.cleanArtist(panel.host.artist) || panel.host.playerName(panel.player)
+            font.pixelSize: Style.space(13); elide: Text.ElideRight
+          }
+          Label {
+            width: parent.width
+            text: panel.player && panel.player.trackAlbum ? panel.player.trackAlbum : panel.host.playerName(panel.player)
+            font.pixelSize: Style.space(11); color: "#778297"; elide: Text.ElideRight
           }
         }
       }
-    }
-
-    Rectangle {
-      id: artwork
-      anchors.left: parent.left
-      anchors.leftMargin: Style.space(18)
-      anchors.top: topControls.bottom
-      anchors.topMargin: Style.space(9)
-      width: Style.space(94); height: width
-      radius: Style.space(19)
-      color: Qt.alpha(panel.accent, 0.16)
-      clip: true
-      Label { anchors.centerIn: parent; text: panel.host.playerIcon(panel.player); color: panel.accent; font.pixelSize: Style.space(34) }
-      SizedImage {
-        id: cover
-        anchors.fill: parent
-        crop: true
-        url: panel.player && panel.player.trackArtUrl ? panel.player.trackArtUrl : ""
-        visible: status === Image.Ready
-        layer.enabled: true
-        layer.effect: MultiEffect { maskEnabled: true; maskSource: coverMask; maskThresholdMin: 0.5; maskSpreadAtMin: 1 }
-      }
-      Rectangle { id: coverMask; anchors.fill: parent; radius: artwork.radius; visible: false; layer.enabled: true; color: "white" }
-    }
-
-    Column {
-      anchors.left: artwork.right
-      anchors.leftMargin: Style.space(16)
-      anchors.right: parent.right
-      anchors.rightMargin: Style.space(15)
-      anchors.top: artwork.top
-      spacing: Style.space(3)
-      Label {
-        width: parent.width
-        text: panel.host.title || strings.t("nothingPlaying")
-        font.pixelSize: Style.font.body
-        font.weight: Font.DemiBold
-        color: panel.capsuleInk
-        elide: Text.ElideRight
-      }
-      Label {
-        width: parent.width
-        text: panel.host.artist || strings.t("player")
-        font.pixelSize: Style.font.caption
-        opacity: 0.95
-        elide: Text.ElideRight
-      }
-      Row {
-        spacing: Style.space(8)
-        Button {
-          width: Style.space(38); height: Style.space(34)
-          iconText: "󰒮"; iconSize: Style.space(19); foreground: panel.capsuleInk
-          horizontalPadding: 0; verticalPadding: 0
-          radius: Style.space(10)
-          tooltipText: strings.t("previous")
-          enabled: !!panel.player && panel.player.canGoPrevious
-          opacity: enabled ? 0.9 : 0.35
-          onClicked: panel.host.mediaService.runAction("previous", false, panel.host.mediaService.playerKey(panel.player))
-        }
-        Button {
-          width: Style.space(46); height: Style.space(40)
-          iconText: panel.host.playIcon; iconSize: Style.space(21); foreground: panel.capsuleInk
-          horizontalPadding: 0; verticalPadding: 0
-          radius: Style.space(14); selected: true
-          background: Qt.alpha(panel.accent, 0.18)
-          tooltipText: panel.host.isPlaying ? strings.t("pause") : strings.t("play")
-          enabled: !!panel.player && (panel.player.canTogglePlaying || panel.player.canPlay || panel.player.canPause)
-          onClicked: panel.host.mediaService.runAction("playPause", false, panel.host.mediaService.playerKey(panel.player))
-        }
-        Button {
-          width: Style.space(38); height: Style.space(34)
-          iconText: "󰒭"; iconSize: Style.space(19); foreground: panel.capsuleInk
-          horizontalPadding: 0; verticalPadding: 0
-          radius: Style.space(10)
-          tooltipText: strings.t("next")
-          enabled: !!panel.player && panel.player.canGoNext
-          opacity: enabled ? 0.9 : 0.35
-          onClicked: panel.host.mediaService.runAction("next", false, panel.host.mediaService.playerKey(panel.player))
-        }
-        Label {
-          text: panel.host.isPlaying ? strings.t("playing") : strings.t("paused")
-          font.pixelSize: Style.font.caption; opacity: 0.85
-          anchors.verticalCenter: parent.verticalCenter
-        }
-      }
-    }
-
+      Item { width: 1; height: Style.space(7) }
     Item {
       id: seekBar
       objectName: "seekBar"
-      anchors.left: parent.left; anchors.right: parent.right
-      anchors.leftMargin: Style.space(18); anchors.rightMargin: Style.space(18)
-      anchors.bottom: parent.bottom; anchors.bottomMargin: Style.space(24)
-      height: Style.space(28)
+      width: parent.width
+      height: Style.space(18)
       LayoutMirroring.enabled: false
       readonly property bool seekable: panel.hasTimeline && !!panel.player.canSeek
       onSeekableChanged: if (!seekable) dragging = false
@@ -254,6 +227,11 @@ Column {
       property string dragTrack: ""
       readonly property real fraction: panel.hasTimeline
         ? Math.max(0, Math.min(1, (dragging ? preview : panel.elapsed) / panel.trackDuration)) : 0
+      property real displayFraction: fraction
+      Behavior on displayFraction {
+        enabled: panel.host.popupOpen && !seekBar.dragging && panel.seekDeadline === 0 && panel.elapsed > 0
+        NumberAnimation { duration: Style.duration(180); easing.type: Easing.OutCubic }
+      }
       function trackKey() {
         return panel.player ? String(panel.player.uniqueId) + "\n" + String(panel.player.trackTitle) + "\n" + String(panel.player.trackArtist) : ""
       }
@@ -265,20 +243,22 @@ Column {
       Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         width: parent.width
-        height: Style.space(seekMouse.containsMouse || seekMouse.pressed ? 6 : 4)
+        height: Style.space(seekMouse.containsMouse || seekMouse.pressed ? 4 : 3)
+        Behavior on height { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
         radius: height / 2
-        color: Qt.rgba(1, 1, 1, 0.17)
+        color: "#242b37"
         Rectangle {
-          width: parent.width * seekBar.fraction
+          width: parent.width * seekBar.displayFraction
           height: parent.height; radius: parent.radius
           color: panel.accent
         }
       }
       Rectangle {
-        x: seekBar.width * seekBar.fraction - width / 2
+        x: seekBar.width * seekBar.displayFraction - width / 2
         anchors.verticalCenter: parent.verticalCenter
-        width: Style.space(seekBar.dragging ? 14 : 10); height: width; radius: width / 2
-        color: panel.capsuleInk
+        width: Style.space(seekBar.dragging || seekMouse.containsMouse ? 10 : 6); height: width; radius: width / 2
+        color: panel.accent
+        Behavior on width { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
         visible: seekBar.seekable
       }
       Rectangle {
@@ -288,7 +268,7 @@ Column {
         x: Math.max(0, Math.min(seekBar.width - width, seekBar.width * (panel.hasTimeline ? seekBar.preview / panel.trackDuration : 0) - width / 2))
         anchors.bottom: parent.top
         radius: Style.space(6)
-        color: "#24252b"
+        color: "#1a2230"
         Label { id: seekTime; anchors.centerIn: parent; text: panel.timestamp(seekBar.preview); color: panel.capsuleInk; font.pixelSize: Style.font.caption }
       }
       MouseArea {
@@ -327,9 +307,7 @@ Column {
       }
     }
     Row {
-      anchors.left: parent.left; anchors.right: parent.right
-      anchors.leftMargin: Style.space(18); anchors.rightMargin: Style.space(18)
-      anchors.bottom: parent.bottom; anchors.bottomMargin: Style.space(12)
+      width: parent.width
       Label {
         width: parent.width * 0.8
         font.pixelSize: Style.font.caption
@@ -344,57 +322,273 @@ Column {
           : "—:—"
       }
     }
-  }
 
-  // Source selection stays tucked below the visual player when multiple apps are active.
-  Column {
-    width: parent.width
-    spacing: Style.space(4)
-    visible: panel.host.sourcePlayers.length > 1
-    Repeater {
-      model: panel.host.sourcePlayers
-      Rectangle {
-        required property var modelData
-        readonly property bool active: panel.player && panel.host.mediaService.playerKey(panel.player) === panel.host.mediaService.playerKey(modelData)
-        width: parent.width; height: Style.space(34); radius: Style.space(17)
-        color: active ? Qt.rgba(1, 1, 1, 0.16) : "#14151a"
-        border.width: 1
-        border.color: active ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.12)
 
-        Row {
-          anchors.fill: parent
-          anchors.leftMargin: Style.space(12)
-          anchors.rightMargin: Style.space(12)
-          spacing: Style.space(8)
+      Item { width: 1; height: Style.space(15) }
+      Rectangle { width: parent.width; height: 1; color: "#202630" }
+      Item { width: 1; height: Style.space(12) }
 
-          Text {
-            textFormat: Text.PlainText
-            text: panel.host.playerIcon(modelData)
-            color: active ? panel.accent : Qt.alpha(panel.capsuleInk, 0.7)
-            font.pixelSize: Style.font.icon
-            font.family: Style.font.family
-            anchors.verticalCenter: parent.verticalCenter
-          }
-
-          Text {
-            textFormat: Text.PlainText
-            text: panel.host.playerName(modelData) + (modelData.trackTitle ? " · " + modelData.trackTitle : "")
-            color: panel.capsuleInk
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
-            font.weight: active ? Font.DemiBold : Font.Normal
-            elide: Text.ElideRight
-            width: parent.width - Style.space(36)
-            anchors.verticalCenter: parent.verticalCenter
+      Flickable {
+        width: parent.width
+        height: Math.min(sourceList.implicitHeight, Style.space(190))
+        contentHeight: sourceList.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        Column {
+          id: sourceList
+          width: parent.width
+          spacing: Style.space(6)
+          Repeater {
+            model: panel.host.sourcePlayers
+            Rectangle {
+              id: sourceRow
+              required property var modelData
+              readonly property bool active: panel.player && panel.host.mediaService.playerKey(panel.player) === panel.host.mediaService.playerKey(modelData)
+              width: sourceList.width; height: Style.space(54)
+              radius: Style.space(6)
+              color: active ? (rowMouse.containsMouse ? "#1d2635" : "#151d2a") : rowMouse.containsMouse ? "#111722" : "transparent"
+              border.width: active ? 1 : 0
+              border.color: Qt.alpha(panel.accent, 0.3)
+              Behavior on color { ColorAnimation { duration: Style.duration(120) } }
+              Rectangle {
+                opacity: sourceRow.active ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: Style.duration(150); easing.type: Easing.OutCubic } }
+                x: 0; anchors.verticalCenter: parent.verticalCenter
+                width: Style.space(2); height: Style.space(sourceRow.active ? 24 : 12); radius: 1
+                Behavior on height { NumberAnimation { duration: Style.duration(180); easing.type: Easing.OutCubic } }
+                color: panel.accent
+              }
+              MouseArea {
+                id: rowMouse
+                anchors.fill: parent; hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: panel.host.selectPlayer(sourceRow.modelData)
+              }
+              Row {
+                anchors.fill: parent
+                anchors.leftMargin: Style.space(8); anchors.rightMargin: Style.space(10)
+                spacing: Style.space(9)
+                Button {
+            focusable: true
+                  width: Style.space(22); height: Style.space(28)
+                  anchors.verticalCenter: parent.verticalCenter
+                  iconText: sourceRow.modelData.isPlaying ? "󰏤" : "󰐊"
+                  iconSize: Style.space(14); foreground: sourceRow.active ? panel.accent : panel.capsuleInk
+                  horizontalPadding: 0; verticalPadding: 0; radius: Style.space(4)
+                  tooltipText: sourceRow.modelData.isPlaying ? strings.t("pause") : strings.t("play")
+                  enabled: sourceRow.modelData.canTogglePlaying || sourceRow.modelData.canPlay || sourceRow.modelData.canPause
+                  onClicked: panel.host.mediaService.runAction("playPause", false, panel.host.mediaService.playerKey(sourceRow.modelData))
+                }
+                Label {
+                  width: Style.space(22)
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: panel.host.playerIcon(sourceRow.modelData)
+                  font.pixelSize: Style.space(21)
+                  color: String(sourceRow.modelData.identity || "").toLowerCase().indexOf("spotify") >= 0 ? "#1ed760" : panel.ink
+                }
+                Column {
+                  width: parent.width - Style.space(62)
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(3)
+                  Label {
+                    width: parent.width
+                    text: sourceRow.modelData.trackTitle || panel.host.playerName(sourceRow.modelData)
+                    color: sourceRow.active ? panel.capsuleInk : panel.ink
+                    font.pixelSize: Style.space(13); font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                  }
+                  Label {
+                    width: parent.width
+                    text: LyricsModel.cleanArtist(sourceRow.modelData.trackArtist) || panel.host.playerName(sourceRow.modelData)
+                    font.pixelSize: Style.space(11); color: "#8b96a9"
+                    elide: Text.ElideRight
+                  }
+                }
+              }
+            }
           }
         }
-
+      }
+      Item { width: 1; height: Style.space(9) }
+      Item {
+        width: parent.width; height: Style.space(26)
+        Row {
+          anchors.left: parent.left; spacing: Style.space(3)
+          Button {
+            focusable: true
+            width: Style.space(29); height: Style.space(26)
+            background: "#10151d"
+            iconText: "󰒮"; iconSize: Style.space(16); foreground: panel.ink
+            horizontalPadding: 0; verticalPadding: 0; radius: Style.space(4)
+            tooltipText: strings.t("previous")
+            enabled: !!panel.player && panel.player.canGoPrevious
+            onClicked: panel.host.mediaService.runAction("previous", false, panel.host.mediaService.playerKey(panel.player))
+          }
+          Button {
+            focusable: true
+            width: Style.space(29); height: Style.space(26)
+            background: "#10151d"
+            iconText: "󰒭"; iconSize: Style.space(16); foreground: panel.ink
+            horizontalPadding: 0; verticalPadding: 0; radius: Style.space(4)
+            tooltipText: strings.t("next")
+            enabled: !!panel.player && panel.player.canGoNext
+            onClicked: panel.host.mediaService.runAction("next", false, panel.host.mediaService.playerKey(panel.player))
+          }
+        }
+        Row {
+          anchors.right: parent.right; spacing: Style.space(8)
+          Button {
+            focusable: true
+            height: Style.space(26)
+            text: strings.t("volumeCompact"); iconText: "󰕾"
+            fontSize: Style.space(11); iconSize: Style.space(13)
+            foreground: panel.showVolume ? panel.accent : panel.ink
+            background: Qt.alpha(panel.accent, panel.showVolume ? 0.13 : 0.04)
+            Behavior on foreground { ColorAnimation { duration: Style.duration(140) } }
+            Behavior on background { ColorAnimation { duration: Style.duration(140) } }
+            horizontalPadding: Style.space(8); verticalPadding: 0; radius: Style.space(5)
+            onClicked: panel.showVolume = !panel.showVolume
+          }
+          Button {
+            focusable: true
+            height: Style.space(26)
+            text: strings.t("lyricsCompact"); iconText: "󰍬"
+            fontSize: Style.space(11); iconSize: Style.space(13)
+            foreground: panel.showLyrics ? panel.accent : panel.ink
+            background: Qt.alpha(panel.accent, panel.showLyrics ? 0.13 : 0.04)
+            Behavior on foreground { ColorAnimation { duration: Style.duration(140) } }
+            Behavior on background { ColorAnimation { duration: Style.duration(140) } }
+            horizontalPadding: Style.space(8); verticalPadding: 0; radius: Style.space(5)
+            onClicked: panel.showLyrics = !panel.showLyrics
+          }
+        }
+      }
+      Reveal {
+        objectName: "volumeDrawer"
+        expanded: panel.showVolume
+        width: parent.width
+        Item { width: 1; height: Style.space(10) }
+        Rectangle { width: parent.width; height: 1; color: "#202630" }
+        Item { width: 1; height: Style.space(6) }
+        Row {
+          width: parent.width; spacing: Style.space(8)
+          Button {
+            focusable: true
+            objectName: "muteButton"
+            width: Style.space(24); height: Style.space(28)
+            iconText: panel.outputAudio && panel.outputAudio.muted ? "󰖁" : "󰕾"
+            iconSize: Style.space(16); foreground: panel.ink
+            horizontalPadding: 0; verticalPadding: 0; radius: Style.space(4)
+            tooltipText: strings.t("mute"); enabled: !!panel.outputAudio
+            onClicked: panel.toggleMute()
+          }
+          PanelSlider {
+            id: volumeSlider
+            objectName: "volumeSlider"
+            width: parent.width - Style.space(84)
+            enabled: !!panel.outputAudio
+            value: panel.outputAudio ? panel.outputAudio.volume : 0
+            fillColor: panel.accent; knobColor: panel.capsuleInk; trackColor: "#242b37"
+            knobSize: Style.space(8); trackHeight: Style.space(3)
+            onMoved: function(value) { panel.setVolume(value) }
+            onRightClicked: panel.toggleMute()
+          }
+          Label {
+            width: Style.space(44); anchors.verticalCenter: parent.verticalCenter
+            horizontalAlignment: Text.AlignRight; font.pixelSize: Style.space(11)
+            text: panel.outputAudio ? Commons.I18n.formatNumber(Math.round((volumeSlider.dragging ? volumeSlider.liveValue : panel.outputAudio.volume) * 100)) + "%" : "—"
+          }
+        }
+      }
+      Reveal {
+        objectName: "lyricsDrawer"
+        expanded: panel.showLyrics
+        width: parent.width
+        spacing: Style.space(8)
+        Rectangle { width: parent.width; height: 1; color: "#202630" }
+        Row {
+          width: parent.width; height: Style.space(22); spacing: Style.space(6)
+          Label {
+            width: parent.width - Style.space(114)
+            anchors.verticalCenter: parent.verticalCenter
+            text: lyrics.synced ? strings.t("lyricsCredit") : strings.t("lyricsCompact")
+            font.pixelSize: Style.space(10); color: "#8b96a9"
+            elide: Text.ElideRight
+          }
+          Button {
+            focusable: true
+            width: Style.space(22); height: parent.height
+            iconText: "󰑐"; iconSize: Style.space(13); foreground: panel.ink
+            horizontalPadding: 0; verticalPadding: 0; radius: Style.space(4)
+            tooltipText: strings.t("retry")
+            enabled: preferences.lyricsOnline && lyrics.state !== "searching"
+            onClicked: lyrics.lookup(true)
+          }
+          Button {
+            focusable: true
+            width: Style.space(80); height: parent.height
+            text: preferences.lyricsOnline ? strings.t("lyricsOn") : strings.t("lyricsOff")
+            fontSize: Style.space(10); foreground: panel.ink
+            horizontalPadding: 0; verticalPadding: 0; radius: Style.space(4)
+            tooltipText: strings.t("lyricsToggle")
+            onClicked: preferences.lyricsOnline = !preferences.lyricsOnline
+          }
+        }
+    ListView {
+      id: lyricList
+      objectName: "lyricList"
+      width: parent.width
+      height: Style.space(92)
+      clip: true; spacing: Style.space(9)
+      visible: preferences.lyricsOnline && lyrics.state === "ready"
+      model: lyrics.synced ? lyrics.lines : lyrics.plain
+      currentIndex: lyrics.activeIndex
+      onCurrentIndexChanged: {
+        if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Center)
+        else positionViewAtBeginning()
+      }
+      onModelChanged: Qt.callLater(function() {
+        if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Center)
+        else positionViewAtBeginning()
+      })
+      delegate: Text {
+        required property var modelData
+        required property int index
+        width: lyricList.width
+        textFormat: Text.PlainText
+        text: lyrics.synced ? (modelData.text || "♪") : modelData
+        wrapMode: Text.Wrap
+        horizontalAlignment: Text.AlignHCenter
+        color: lyrics.synced && index === lyrics.activeIndex ? panel.capsuleInk : panel.ink
+        opacity: !lyrics.synced || index === lyrics.activeIndex ? 1 : 0.55
+        Behavior on opacity { NumberAnimation { duration: Style.duration(180); easing.type: Easing.OutCubic } }
+        Behavior on color { ColorAnimation { duration: Style.duration(180) } }
+        font.family: Style.font.family
+        font.pixelSize: Style.font.body
+        font.weight: index === lyrics.activeIndex ? Font.DemiBold : Font.Normal
         MouseArea {
           anchors.fill: parent
-          hoverEnabled: true
+          enabled: lyrics.synced && !!panel.player && panel.player.canSeek
           cursorShape: Qt.PointingHandCursor
-          onClicked: panel.host.selectPlayer(modelData)
+          onClicked: {
+            panel.player.position = Math.max(0, modelData.time)
+            panel.elapsed = Math.max(0, modelData.time)
+          }
         }
+      }
+    }
+    Label {
+      width: parent.width; height: Style.space(72)
+      visible: !lyricList.visible
+      horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+      wrapMode: Text.Wrap; opacity: 0.65
+      text: !preferences.lyricsOnline ? strings.t("lyricsDisabled")
+        : lyrics.state === "searching" ? strings.t("lyricsSearching")
+        : lyrics.state === "error" ? strings.t("lyricsError")
+        : lyrics.record && lyrics.record.instrumental ? strings.t("lyricsInstrumental")
+        : lyrics.state === "empty" ? strings.t("lyricsEmpty") : strings.t("lyricsWaiting")
+    }
+
       }
     }
   }

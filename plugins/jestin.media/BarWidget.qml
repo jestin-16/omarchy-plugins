@@ -4,6 +4,7 @@ import Quickshell.Hyprland
 import qs.Ui
 import qs.Commons
 import qs.Commons as Commons
+import "vendor/lyrics/Model.js" as LyricsModel
 
 BarWidget {
   id: root
@@ -124,7 +125,7 @@ BarWidget {
       if (wheel.angleDelta.y > 0 && root.mediaService) root.mediaService.runAction("previous", false, root.mediaService.playerKey(root.activePlayer))
       else if (wheel.angleDelta.y < 0 && root.mediaService) root.mediaService.runAction("next", false, root.mediaService.playerKey(root.activePlayer))
     }
-    onEntered: if (root.bar) root.bar.showTooltip(root, root.hasMedia ? (root.title + (root.artist ? " — " + root.artist : "")) : "")
+    onEntered: if (root.bar) root.bar.showTooltip(root, root.hasMedia ? LyricsModel.safeDisplayText(root.title + (root.artist ? " — " + root.artist : "")) : "")
     onExited: if (root.bar) root.bar.hideTooltip(root)
   }
 
@@ -164,8 +165,8 @@ BarWidget {
     visible: root.popupOpen || cardContainer.opacity > 0
     color: "transparent"
     mask: Region { item: root.popupOpen ? cardContainer : null }
-    implicitWidth: fittedContentWidth(Style.space(380))
-    implicitHeight: fittedContentHeight(mediaPanel.implicitHeight)
+    implicitWidth: fittedContentWidth(Style.space(404))
+    implicitHeight: fittedContentHeight(mediaPanel.implicitHeight + Style.space(4))
 
     HyprlandFocusGrab {
       active: root.popupOpen
@@ -225,13 +226,19 @@ BarWidget {
       Behavior on shown {
         id: showing
         NumberAnimation {
-          duration: Style.duration(showing.targetValue > 0 ? 180 : 120)
+          duration: Style.duration(showing.targetValue > 0 ? 220 : 130)
           easing.type: Easing.Bezier
           easing.bezierCurve: Style.easeOut
         }
       }
       opacity: shown
       scale: 0.97 + 0.03 * shown
+      transform: Translate {
+        x: !root.bar ? 0 : root.bar.position === "left" ? -Style.space(5) * (1 - cardContainer.shown)
+          : root.bar.position === "right" ? Style.space(5) * (1 - cardContainer.shown) : 0
+        y: !root.bar || root.bar.position === "top" ? -Style.space(5) * (1 - cardContainer.shown)
+          : root.bar.position === "bottom" ? Style.space(5) * (1 - cardContainer.shown) : 0
+      }
       transformOrigin: !root.bar || root.bar.position === "top" ? Item.Top
         : root.bar.position === "bottom" ? Item.Bottom
         : root.bar.position === "left" ? Item.Left : Item.Right
@@ -241,6 +248,7 @@ BarWidget {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
+        anchors.margins: Style.space(2)
         host: root
       }
     }

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "jestin.breathing-borders",
+  "name": "Breathing Borders",
+  "version": "1.0.0",
+  "description": "Slow, subtle breathing opacity for shell panel borders. Respects reduced motion.",
+  "kinds": ["service"],
+  "entryPoints": { "service": "Service.qml" }
+}

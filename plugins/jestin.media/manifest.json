@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "jestin.media",
   "name": "My Media",
-  "version": "1.0.0",
+  "version": "1.3.0",
   "author": "Omarchy",
-  "description": "MPRIS media control service",
+  "description": "Compact MPRIS player with source selection and expandable volume and lyrics",
   "kinds": [
     "service",
     "bar-widget"
