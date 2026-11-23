@@ -1,0 +1,8 @@
+<RCC><qresource prefix="/">
+  <file alias="Main.qml">Main.qml</file>
+  <file alias="BrowserPane.qml">BrowserPane.qml</file>
+  <file alias="ActionButton.qml">ActionButton.qml</file>
+  <file alias="lensdesk.svg">../../share/icons/google-lens.svg</file>
+  <file alias="i18n/en.json">i18n/en.json</file>
+  <file alias="i18n/da.json">i18n/da.json</file>
+</qresource></RCC>

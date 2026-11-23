@@ -2,13 +2,25 @@
 Name=Google Lens
 Comment=Capture screen region and search with Google Lens
 Exec=google-lens
-Icon=google-chrome
+Icon=google-lens
 Terminal=false
 Type=Application
 Categories=Utility;
 Keywords=lens;google;ocr;search;image;screenshot;
-Actions=Fullscreen;
+Actions=Fullscreen;Toggle;LowMemory;Fast;
 
 [Desktop Action Fullscreen]
 Name=Google Lens (Fullscreen)
 Exec=google-lens fullscreen
+
+[Desktop Action Toggle]
+Name=Show / hide results
+Exec=google-lens toggle
+
+[Desktop Action LowMemory]
+Name=Use low-memory mode
+Exec=google-lens mode low-memory
+
+[Desktop Action Fast]
+Name=Keep Lens ready for fast searches
+Exec=google-lens mode fast

@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+/native/build/
+/native/pkgbuild/pkg/
+/native/pkgbuild/src/
+*.pkg.tar.*

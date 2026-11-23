@@ -1,0 +1,10 @@
+#!/bin/sh
+# Preview installation alongside the stable launcher; no system files change.
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+"$ROOT/bin/build"
+DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}"
+install -Dm755 "$ROOT/build/lensdesk" "$HOME/.local/bin/lensdesk"
+install -Dm644 "$ROOT/pkgbuild/lensdesk.desktop" "$DATA_DIR/applications/lensdesk.desktop"
+install -Dm644 "$ROOT/../share/icons/google-lens.svg" "$DATA_DIR/icons/hicolor/scalable/apps/lensdesk.svg"
+printf '%s\n' 'Installed Lensdesk (Preview). Run lensdesk; the google-lens shortcut is unchanged.'

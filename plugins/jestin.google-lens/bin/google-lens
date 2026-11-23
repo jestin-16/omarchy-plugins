@@ -5,74 +5,101 @@
 # omarchy:args=[smart|region|windows|fullscreen]
 # omarchy:examples=google-lens | google-lens fullscreen
 
-set -eo pipefail
+set -euo pipefail
+umask 077
+
+notify() {
+  omarchy-notification-send -g "󰄀" "Google Lens" "$1" 2>/dev/null || true
+}
+
+fail() {
+  printf 'Google Lens: %s\n' "$1" >&2
+  notify "$1"
+  exit 1
+}
 
 MODE="${1:-smart}"
+SCRIPT_DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+DESKTOP="$SCRIPT_DIR/../libexec/google-lens-desktop.py"
+case "$MODE" in
+  smart|region|windows|fullscreen) ;;
+  hide|show|toggle|mode|quality|status)
+    command -v python3 >/dev/null || fail "Missing dependency: python3"
+    LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/google-lens"
+    mkdir -p "$LOG_DIR"
+    exec 9>"$LOG_DIR/capture.lock"
+    flock -n 9 || exit 0
+    python3 "$DESKTOP" "$@" 9>&-
+    exit $? ;;
+  -h|--help)
+    echo "Usage: google-lens [smart|region|windows|fullscreen|hide|show|toggle|status]"
+    echo "       google-lens mode fast|low-memory"
+    echo "       google-lens quality balanced|original"
+    exit 0 ;;
+  *) fail "Unknown capture mode: $MODE" ;;
+esac
 
-# 1. Select screen region across any monitor
-SELECTION=$(omarchy-capture-region "$MODE" 2>/dev/null || true)
-if [[ -z "$SELECTION" ]]; then
-  exit 0
-fi
+for dependency in omarchy-capture-region grim wl-copy chromium python3 node flock hyprctl; do
+  command -v "$dependency" >/dev/null || fail "Missing dependency: $dependency"
+done
 
-TEMP_IMG="/tmp/google-lens-$(date +%s%N).jpg"
+UPLOADER="$SCRIPT_DIR/../libexec/google-lens-upload.py"
+[[ -f "$UPLOADER" ]] || fail "Upload helper is missing. Run the plugin's install.sh again."
+[[ -f "$SCRIPT_DIR/../libexec/google-lens-window.mjs" ]] || fail "Window helper is missing. Run the plugin's install.sh again."
+[[ -f "$DESKTOP" ]] || fail "Desktop helper is missing. Run the plugin's install.sh again."
+
+# Serialize captures so two quick shortcut presses cannot create two windows.
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/google-lens"
+mkdir -p "$LOG_DIR"
+exec 9>"$LOG_DIR/capture.lock"
+flock -n 9 || exit 0
+
+TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/google-lens.XXXXXXXX")
+restore_window() {
+  if [[ -f "$TEMP_DIR/windows.json" ]]; then
+    python3 "$DESKTOP" restore "$TEMP_DIR/windows.json" || return 1
+  fi
+}
 cleanup() {
-  rm -f "$TEMP_IMG" 2>/dev/null || true
+  if restore_window; then
+    rm -rf -- "$TEMP_DIR"
+  else
+    # Preserve the recovery record if the compositor is temporarily unavailable.
+    printf 'Google Lens: window recovery record retained at %s/windows.json\n' "$TEMP_DIR" >&2
+    rm -f -- "$TEMP_DIR/capture.png" "$TEMP_DIR/upload.png"
+  fi
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-# 2. Capture selected region directly as JPEG (fast, compact)
-grim -t jpeg -q 85 -g "$SELECTION" "$TEMP_IMG" 2>/dev/null || exit 1
+# Keep Lens out of the frozen selection, including when it is pinned.
+python3 "$DESKTOP" prepare "$TEMP_DIR/windows.json" ||
+  fail "Could not hide Lens before capture. Run google-lens in a terminal for details."
 
-if [[ ! -s "$TEMP_IMG" ]]; then
+# The picker exits 1 without a message when the user cancels.
+if ! SELECTION=$(omarchy-capture-region "$MODE" 2>"$TEMP_DIR/capture-error"); then
+  if [[ -s "$TEMP_DIR/capture-error" ]]; then
+    cat "$TEMP_DIR/capture-error" >&2
+    fail "Screen selection failed. Run google-lens in a terminal for details."
+  fi
   exit 0
 fi
+[[ -n "$SELECTION" ]] || exit 0
 
-# 3. Copy image to clipboard immediately (ready to paste anywhere or into Lens)
-wl-copy -t image/jpeg < "$TEMP_IMG" 2>/dev/null || true
+# PNG is also supported by clipboard consumers which cannot paste JPEG.
+TEMP_IMG="$TEMP_DIR/capture.png"
+grim -t png -g "$SELECTION" "$TEMP_IMG" || fail "Could not capture the selected region."
+[[ -s "$TEMP_IMG" ]] || fail "The screen capture was empty."
+wl-copy -t image/png < "$TEMP_IMG" || notify "Clipboard copy failed; continuing with visual search."
+restore_window || fail "Could not restore the Lens window."
+# A panel explicitly dismissed with `hide` should reappear for this search too.
+python3 "$DESKTOP" show || fail "Could not show the Lens window."
 
-# 4. Notify user that Google Lens search is in progress
-NOTIF_ID=$(omarchy-notification-send -p -g "󰄀" "Google Lens" "Searching with Google Lens..." 2>/dev/null || echo "")
-
-# 5. Fast direct upload to Google Lens upload endpoint (using HTTP/1.1 and required headers)
-HTTP_RESPONSE=$(curl -s --http1.1 -i --connect-timeout 6 --max-time 15 \
-  -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" \
-  -H "Origin: https://lens.google.com" \
-  -H "Referer: https://lens.google.com/" \
-  -F "encoded_image=@$TEMP_IMG" \
-  -F "ep=cc" \
-  "https://lens.google.com/upload" 2>/dev/null || true)
-
-LENS_URL=$(echo "$HTTP_RESPONSE" | grep -i "^location:" | head -n 1 | sed 's/^[Ll]ocation:[[:space:]]*//' | tr -d '\r\n' || true)
-
-TARGET_URL="https://images.google.com"
-if [[ "$LENS_URL" =~ vsrid= ]]; then
-  if [[ $LENS_URL == /* ]]; then
-    TARGET_URL="https://www.google.com${LENS_URL}"
-  else
-    TARGET_URL="$LENS_URL"
-  fi
-  if [[ -n "${NOTIF_ID:-}" && "$NOTIF_ID" =~ ^[0-9]+$ ]]; then
-    omarchy-notification-send -r "$NOTIF_ID" -g "󰄀" "Google Lens" "Visual search ready" 2>/dev/null || true
-  fi
-else
-  if [[ -n "${NOTIF_ID:-}" && "$NOTIF_ID" =~ ^[0-9]+$ ]]; then
-    omarchy-notification-send -r "$NOTIF_ID" -u normal -g "󰄀" "Google Lens" "Image in clipboard! Paste (Ctrl+V) into Lens overlay." 2>/dev/null || true
-  fi
-fi
-
-# 6. Close any previously open Google Lens overlay
-pkill -f "google-lens/profile" 2>/dev/null || true
-sleep 0.1
-
-# 7. Launch chromeless floating overlay on top of active window
 PROFILE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/google-lens/profile"
-mkdir -p "$PROFILE_DIR"
+mkdir -p "$PROFILE_DIR" "$LOG_DIR"
 
-chromium \
-  --app="$TARGET_URL" \
-  --user-data-dir="$PROFILE_DIR" \
-  --no-first-run \
-  --no-default-browser-check \
-  --disable-features=Translate \
-  --ozone-platform=wayland >/dev/null 2>&1 &
+# Submit in Chromium so the upload, cookies, redirects and search all share
+# the same browser session. No curl result URL parsing or manual paste.
+python3 "$UPLOADER" "$TEMP_IMG" "$PROFILE_DIR" "$LOG_DIR/browser.log" 9>&- ||
+  fail "Could not open the Lens upload. See $LOG_DIR/browser.log and terminal output."

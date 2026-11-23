@@ -1,0 +1,21 @@
+[Desktop Entry]
+Type=Application
+Name=Lensdesk (Preview)
+Name[da]=Lensdesk (forhåndsvisning)
+Comment=Visual search and local text extraction
+Comment[da]=Billedsøgning og lokal tekstgenkendelse
+Exec=lensdesk %f
+Icon=lensdesk
+Terminal=false
+Categories=Utility;
+MimeType=image/png;image/jpeg;image/webp;
+StartupWMClass=lensdesk
+Actions=Capture;Text;
+
+[Desktop Action Capture]
+Name=Capture and search
+Exec=lensdesk --capture
+
+[Desktop Action Text]
+Name=Capture text locally
+Exec=lensdesk --text
