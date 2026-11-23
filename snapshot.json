@@ -11,6 +11,10 @@
       "version": "1.0.0"
     },
     {
+      "id": "jestin.google-lens",
+      "version": "1.0.0"
+    },
+    {
       "id": "jestin.lock",
       "version": "1.0.0",
       "cloned_from": "omarchy.lock"

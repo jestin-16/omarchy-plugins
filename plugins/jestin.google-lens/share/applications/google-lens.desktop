@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=Google Lens
+Comment=Capture screen region and search with Google Lens
+Exec=google-lens
+Icon=google-chrome
+Terminal=false
+Type=Application
+Categories=Utility;
+Keywords=lens;google;ocr;search;image;screenshot;
+Actions=Fullscreen;
+
+[Desktop Action Fullscreen]
+Name=Google Lens (Fullscreen)
+Exec=google-lens fullscreen

@@ -9,6 +9,7 @@ extend Omarchy's Quickshell desktop and require a compatible Omarchy installatio
 | --- | --- |
 | `plugins/jestin.agents` | Agent usage and subscription panel |
 | `plugins/jestin.breathing-borders` | Breathing opacity for panel borders |
+| `plugins/jestin.google-lens` | Google Lens screen snip and floating visual search overlay |
 | `plugins/jestin.lock` | Custom lock screen with companion and status components |
 | `plugins/jestin.media` | Media service and now-playing widget with synced lyrics |
 | `plugins/jestin.menu` | Compact searchable Omarchy menu |
