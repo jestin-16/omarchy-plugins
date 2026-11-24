@@ -106,6 +106,9 @@ QT_QUICK_BACKEND=software native/build/lensdesk --preview \
 The explicit generic Qt platform theme prevents the installed GTK theme plugin
 from trying to connect to the live display during an offscreen test.
 
-No remote publication or push is authorized. Local Git checkpoints are used to
-preserve completed stages. A native prototype must not silently become the
-default launcher before live compatibility validation.
+The user authorized pushing both repositories. Push attempts on 2026-11-24
+failed because this session cannot resolve `github.com`; the latest Lensdesk
+follow-up commit remains local. Retry `git -C ~/Projects/omarchy-google-lens push
+origin master` and `git -C ~/Projects/omarchy-plugins push origin main` when DNS
+is available. A native prototype must not silently become the default launcher
+before live compatibility validation.
