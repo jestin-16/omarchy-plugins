@@ -33,10 +33,12 @@ isolated web profile, one-instance local IPC, a hidden-browser unload timer,
 saved window geometry, live Omarchy accent/language support, and headless
 dependency diagnostics.
 
-The native sources compile with qmake6 and make. Qt tests report 15 passes
-(including setup/cleanup): file validation, unchanged originals, crop/undo,
-settings, URL validation, a real Tesseract run, cancelled capture recovery, and
-mouse-driven cropping in the actual QML. All 30 stable-launcher checks pass too.
+The native sources compile with qmake6 and make. Qt tests report 16 passes
+(including setup/cleanup): file and clipboard image validation, unchanged
+originals, crop/undo, settings, URL validation, a real Tesseract run, cancelled
+capture recovery, and mouse-driven cropping in the actual QML. Large clipboard
+image decoding runs in a worker thread. Ctrl+Q stores window geometry before
+exit. All 30 stable-launcher checks pass too.
 Real QML screenshots were rendered and visually inspected in English and Danish.
 `native/docs/preview.png` uses invented sample content and the default accent.
 
@@ -52,10 +54,18 @@ user-level preview can be reinstalled with `native/bin/install-user`.
 
 The native renderer, Google upload/CAPTCHA, portal chooser, native single-instance
 IPC, compositor pinning/geometry, and hide/reopen browser behavior still need a
-live desktop test. The tool sandbox blocks live desktop/network sockets. The
-offline UI preview deliberately does not start WebEngine, and must not be treated
-as proof that native Google integration works. Do not promote it to the default
-until the live acceptance checklist in `native/README.md` is completed.
+live desktop test. Attempting to launch the installed panel from the coding
+session generated one SIGABRT core: systemd journal and backtrace confirm Qt could
+not create a platform integration because `Failed to create wl_display
+(Operation not permitted)` and `could not connect to display :0`; the abort was
+in `QGuiApplicationPrivate::createPlatformIntegration`, before QML or image load.
+`hyprctl monitors -j` likewise could not access the Hyprland socket, and DNS for
+`lens.google.com` failed. The temp file used was synthetic and no user image was
+opened. This is evidence of the tool sandbox's desktop/network boundary, not of a
+Google or Lensdesk rendering failure. The offline UI preview deliberately does
+not start WebEngine, and must not be treated as proof of Google integration. Do
+not promote it to the default until the live acceptance checklist in
+`native/README.md` is completed from a normal desktop terminal.
 
 Native data and cookies live under `~/.local/share/lensdesk`, separately from the
 old Chromium profile. Local input is not uploaded until Search, except New capture

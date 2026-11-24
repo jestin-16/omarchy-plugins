@@ -26,6 +26,19 @@ static QString rootPath(const QString &overridePath) {
     return overridePath.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) : overridePath;
 }
 
+static QImage decodeImage(QByteArray contents) {
+    if (contents.isEmpty() || contents.size() > 20 * 1024 * 1024) return {};
+    QBuffer buffer(&contents);
+    if (!buffer.open(QIODevice::ReadOnly)) return {};
+    QImageReader reader(&buffer);
+    reader.setAutoTransform(true);
+    const QByteArray format = reader.format().toLower();
+    if (format != "png" && format != "jpeg" && format != "jpg" && format != "webp") return {};
+    const QSize size = reader.size();
+    if (!size.isValid() || qint64(size.width()) * size.height() > 40000000) return {};
+    return reader.read();
+}
+
 Backend::Backend(bool preview, const QString &root, QObject *parent)
     : QObject(parent), m_root(rootPath(root)), m_preview(preview),
       m_settings(m_root + "/preferences.ini", QSettings::IniFormat) {
@@ -180,22 +193,38 @@ void Backend::loadFile(const QUrl &url) {
     m_busy = true; m_error.clear(); m_status = tr("Opening image…"); emit changed();
     const QString path = file.absoluteFilePath();
     m_decoder.setFuture(QtConcurrent::run([path] {
-        QImageReader reader(path);
-        reader.setAutoTransform(true);
-        const QByteArray format = reader.format().toLower();
-        if (format != "png" && format != "jpeg" && format != "jpg" && format != "webp") return QImage();
-        const QSize size = reader.size();
-        if (!size.isValid() || qint64(size.width()) * size.height() > 40000000) return QImage();
-        return reader.read();
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly) || file.size() > 20 * 1024 * 1024) return QImage();
+        return decodeImage(file.readAll());
     }));
 }
 
 void Backend::pasteImage() {
     if (m_busy) return;
-    const auto clipboard = QGuiApplication::clipboard();
-    if (clipboard->mimeData()->hasImage()) setImage(clipboard->image());
-    else if (clipboard->mimeData()->hasUrls() && clipboard->mimeData()->urls().size() == 1) loadFile(clipboard->mimeData()->urls().first());
-    else fail(tr("The clipboard does not contain an image."));
+    const auto *mime = QGuiApplication::clipboard()->mimeData();
+    if (mime->hasUrls() && mime->urls().size() == 1 && mime->urls().first().isLocalFile()) {
+        loadFile(mime->urls().first());
+        return;
+    }
+    QByteArray encoded;
+    for (const QByteArray &type : {QByteArray("image/png"), QByteArray("image/jpeg"), QByteArray("image/webp")}) {
+        if (mime->hasFormat(type)) { encoded = mime->data(type); break; }
+    }
+    if (!encoded.isEmpty()) {
+        if (encoded.size() > 20 * 1024 * 1024) { fail(tr("Clipboard image exceeds the 20 MB limit.")); return; }
+        m_busy = true; m_error.clear(); m_status = tr("Opening clipboard image…"); emit changed();
+        m_decoder.setFuture(QtConcurrent::run([encoded] { return decodeImage(encoded); }));
+        return;
+    }
+    if (mime->hasImage()) {
+        const QImage image = qvariant_cast<QImage>(mime->imageData());
+        if (image.isNull() || qint64(image.width()) * image.height() > 40000000) {
+            fail(tr("The clipboard image is empty or too large.")); return;
+        }
+        setImage(image);
+        return;
+    }
+    fail(tr("The clipboard does not contain an image."));
 }
 
 void Backend::chooseFile() {

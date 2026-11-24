@@ -59,10 +59,10 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+N"; onActivated: backend.capture() }
     Shortcut { sequence: "Ctrl+O"; onActivated: backend.chooseFile() }
     Shortcut { sequence: "Ctrl+Shift+V"; onActivated: backend.pasteImage() }
-    Shortcut { sequence: "Ctrl+Q"; onActivated: Qt.quit() }
+    Shortcut { sequence: "Ctrl+Q"; onActivated: { backend.saveGeometry(win.x, win.y, win.width, win.height); Qt.quit() } }
     Shortcut { sequence: "Ctrl+Z"; enabled: !win.requested; onActivated: backend.undoCrop() }
     Shortcut { sequence: "?"; enabled: !win.requested; onActivated: helpDialog.open() }
-    Shortcut { sequence: "Q"; enabled: !win.requested; onActivated: Qt.quit() }
+    Shortcut { sequence: "Q"; enabled: !win.requested; onActivated: { backend.saveGeometry(win.x, win.y, win.width, win.height); Qt.quit() } }
     Shortcut { sequence: "Space"; enabled: !win.requested; onActivated: backend.capture() }
 
     ColumnLayout {
