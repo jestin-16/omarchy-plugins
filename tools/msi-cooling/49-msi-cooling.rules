@@ -1,0 +1,9 @@
+// This root-owned controller accepts only fixed cooling operations.
+polkit.addRule(function(action, subject) {
+    if (action.id == "local.msi.cooling.select" &&
+        action.lookup("program") == "/usr/local/libexec/msi-cooling-controller" &&
+        action.lookup("user") == "root" &&
+        subject.user == "jestin" && subject.local && subject.active) {
+        return polkit.Result.YES;
+    }
+});

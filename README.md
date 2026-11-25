@@ -14,6 +14,7 @@ extend Omarchy's Quickshell desktop and require a compatible Omarchy installatio
 | `plugins/jestin.media` | Media service and now-playing widget with synced lyrics |
 | `plugins/jestin.menu` | Compact searchable Omarchy menu |
 | `plugins/jestin.network` | Wi-Fi list and connection state widget |
+| `plugins/jestin.notifications` | Compact notification cards, faster updates, and shorter timeouts |
 | `plugins/jestin.workspaces` | Workspace indicators |
 
 These are personal copies of Omarchy plugins, with their original author and
@@ -43,6 +44,21 @@ you want; cloned plugins can replace their built-in counterparts. Configure bar
 placement through Omarchy. Review lock-screen compatibility before enabling a
 replacement lock service.
 
+## Cooling controls
+
+[`tools/msi-cooling`](tools/msi-cooling/README.md) preserves the Quiet, Balanced,
+Dynamic, and Boost presets, the temperature controller, and the Fn+F7/Super+F7
+mode cycle. This is a personal setup for Jestin's MSI GF63 Thin 11UC, not a generic
+fan-control installer. Its README covers installation, thresholds, and stopping
+the service.
+
+## Notification changes
+
+[`plugins/jestin.notifications`](plugins/jestin.notifications/README.md) replaces
+the built-in notification service through Omarchy's clone mechanism. It keeps
+notification actions, history, and Do Not Disturb, while using compact cards,
+shorter animations, immediate replacements, and sender-requested timeouts.
+
 ## Changes to third-party plugins
 
 `patches/` preserves local changes to Lock Screen Explorer, OmaControl, and
@@ -61,13 +77,13 @@ Patches against newer upstream versions may need changes.
 
 ## Scope and attribution
 
-This snapshot includes plugin source and local upstream modifications. It excludes
+This snapshot includes plugin source, the cooling tool, and local upstream modifications. It excludes
 credentials, usage histories, caches, desktop settings, and unmodified installed
 third-party plugins. Runtime code may read credentials or usage records locally;
 those records are not included in this repository.
 
-`snapshot.json` records the included plugin versions and patch baselines. The five
-`jestin.*` plugins derive from [Omarchy](https://github.com/omacom/omarchy), by David
+`snapshot.json` records the included plugin versions, tools, and patch baselines.
+Plugins with `clonedFrom` metadata derive from [Omarchy](https://github.com/omacom/omarchy), by David
 Heinemeier Hansson, under the MIT license reproduced in `LICENSE-OMARCHY`.
 Third-party patches retain the upstream authorship and license notices.
 

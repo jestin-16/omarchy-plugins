@@ -1,0 +1,4 @@
+# GF63 gaming-mode key: scan 8a -> KEY_PROG3 -> XF86Launch3.
+# Confirmed by a physical Fn+F7 event capture on this GF63 Thin 11UC.
+evdev:atkbd:dmi:*:svnMicro-StarInternationalCo.,Ltd.:pnGF63Thin11UC:*
+ KEYBOARD_KEY_8a=prog3

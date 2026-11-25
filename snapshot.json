@@ -1,5 +1,5 @@
 {
-  "snapshot_date": "2026-11-22",
+  "snapshot_date": "2026-11-25",
   "custom_plugins": [
     {
       "id": "jestin.agents",
@@ -38,6 +38,12 @@
       "id": "jestin.workspaces",
       "version": "1.0.0",
       "cloned_from": "omarchy.workspaces"
+    },
+    {
+      "id": "jestin.notifications",
+      "version": "2.0.0",
+      "cloned_from": "omarchy.notifications",
+      "omarchy_version": "4.5.0-3"
     }
   ],
   "upstream_patches": [
@@ -55,6 +61,14 @@
       "id": "postman.omascreentime",
       "upstream": "https://github.com/kennetpostigo/omascreentime",
       "base_commit": "f50be305c4aebe879c6b1861842f7acdc186bc94"
+    }
+  ],
+  "desktop_tools": [
+    {
+      "path": "tools/msi-cooling",
+      "purpose": "Cooling presets and temperature-responsive fan control",
+      "hardware": "MSI GF63 Thin 11UC",
+      "user": "jestin"
     }
   ]
 }

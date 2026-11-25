@@ -1,0 +1,21 @@
+[Unit]
+Description=MSI cooling presets and temperature-responsive cooling
+After=systemd-modules-load.service power-profiles-daemon.service
+Wants=power-profiles-daemon.service
+ConditionPathExists=/sys/devices/platform/msi-ec/cooler_boost
+
+[Service]
+Type=simple
+ExecStart=/usr/local/libexec/msi-cooling-controller daemon
+ExecStopPost=/usr/local/libexec/msi-cooling-controller restore
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+UMask=0022
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
