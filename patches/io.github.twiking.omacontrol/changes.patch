@@ -1,3 +1,137 @@
+diff --git a/Panel.qml b/Panel.qml
+index d7163ca..90e7222 100644
+--- a/Panel.qml
++++ b/Panel.qml
+@@ -59,6 +59,8 @@ BarWidget {
+     ? switchedOn.length : 0
+   readonly property bool warnNetwork: setting("showNetworkWarning", true) !== false
+   readonly property bool warnBattery: setting("showBatteryWarnings", true) !== false
++  readonly property bool badgeWanted: setting("showActiveSwitchCount", true) !== false
++    || warnNetwork || warnBattery
+ 
+   // Offline outranks the count: it is the one thing on the badge that is a
+   // problem rather than a choice. Null means NetworkManager could not be
+@@ -90,12 +92,24 @@ BarWidget {
+   readonly property bool markDevices: lowDevices.length > 0 && warnBattery
+ 
+   property var watching: null
+-  onServiceChanged: {
+-    if (watching) watching.watchSwitches(false)
+-    watching = service
+-    if (watching) watching.watchSwitches(true)
++  property bool watchingActive: false
++  function syncWatch() {
++    var want = root.badgeWanted ? root.service : null
++    if (watching === want) return
++    if (watching && watchingActive) {
++      watching.watchSwitches(false)
++      watchingActive = false
++    }
++    watching = want
++    if (watching) {
++      watching.watchSwitches(true)
++      watchingActive = true
++    }
+   }
+-  Component.onDestruction: if (watching) watching.watchSwitches(false)
++  onServiceChanged: syncWatch()
++  onBadgeWantedChanged: syncWatch()
++  Component.onCompleted: syncWatch()
++  Component.onDestruction: if (watching && watchingActive) watching.watchSwitches(false)
+ 
+   implicitWidth: button.implicitWidth
+   implicitHeight: button.implicitHeight
+diff --git a/SettingsWindow.qml b/SettingsWindow.qml
+index 6163427..9e4a665 100644
+--- a/SettingsWindow.qml
++++ b/SettingsWindow.qml
+@@ -535,10 +535,32 @@ Item {
+ 
+   function pollWifi() {
+     if (wifiPollProcess.running) return
+-    wifiPollProcess.command = ["bash", root.helperPath, "wifi", "poll"]
++    // Read the cache without waiting for a scan request to finish.
++    wifiPollProcess.command = ["bash", root.helperPath, "wifi", "list"]
+     wifiPollProcess.running = true
+   }
+ 
++  function scanWifi() {
++    if (wifiScanProcess.running) return
++    wifiScanProcess.command = ["bash", root.helperPath, "wifi", "rescan"]
++    wifiScanProcess.running = true
++  }
++
++  Process {
++    id: wifiScanProcess
++    stdout: StdioCollector {
++      waitForEnd: true
++      onStreamFinished: {
++        try {
++          var next = JSON.parse(text)
++          if (next && typeof next === "object") root.wifiLive = next
++        } catch (e) {
++          // A failed scan leaves the current cache in place.
++        }
++      }
++    }
++  }
++
+   Process {
+     id: wifiPollProcess
+     stdout: StdioCollector {
+diff --git a/lib/overview.sh b/lib/overview.sh
+index 5bc03c0..4dcdd4a 100644
+--- a/lib/overview.sh
++++ b/lib/overview.sh
+@@ -326,10 +326,10 @@ overview_watch() {
+     esac
+   }
+ 
+-  local reader=$$
+-  {
++  local reader=$$ prod_pid
++  exec 3< <(
+     local pids=()
+-    trap 'kill "${pids[@]}" 2>/dev/null' EXIT
++    trap 'kill "${pids[@]}" 2>/dev/null; exit 0' EXIT TERM INT HUP PIPE
+     # Files arrive tagged, so anything untagged is NetworkManager or UPower.
+     inotifywait -q -m -e create,delete,close_write,moved_to --format 'file:%f' \
+       "$state/indicators" "$state" 2>/dev/null & pids+=($!)
+@@ -342,19 +342,22 @@ overview_watch() {
+     # Nothing here notices the bar going away until the next event, which may
+     # be hours off, so the reader is watched instead.
+     while kill -0 "$reader" 2>/dev/null; do sleep 2; done
+-  } | while :; do
++  )
++  prod_pid=$!
++  trap 'kill "$prod_pid" 2>/dev/null; exec 3<&-' EXIT TERM INT HUP PIPE
++  while :; do
+         wait_for=$(( switches_at + OVERVIEW_SWITCHES_RECHECK - SECONDS ))
+         (( low_at + OVERVIEW_PERIPHERALS_RECHECK - SECONDS < wait_for )) \
+           && wait_for=$(( low_at + OVERVIEW_PERIPHERALS_RECHECK - SECONDS ))
+         (( wait_for < 1 )) && wait_for=1
+-        read -r -t "$wait_for" line; rc=$?
++        read -r -t "$wait_for" -u 3 line; rc=$?
+         # End of input is the watcher gone; anything over 128 is the timeout.
+         (( rc != 0 && rc <= 128 )) && break
+         (( rc == 0 )) && overview_wanted_by "$line"
+         # A burst is read whole before anything is asked, or one key press
+         # costs four reads.
+         if (( want_switches || want_online || want_low )); then
+-          while read -r -t 0.2 line; do overview_wanted_by "$line"; done
++          while read -r -t 0.2 -u 3 line; do overview_wanted_by "$line"; done
+         fi
+         (( SECONDS - switches_at >= OVERVIEW_SWITCHES_RECHECK )) && want_switches=1
+         (( SECONDS - low_at >= OVERVIEW_PERIPHERALS_RECHECK )) && want_low=1
+@@ -367,6 +370,8 @@ overview_watch() {
+         next=$(overview_compose "$switches" "$online" "$low")
+         [[ $next != "$last" ]] && { printf '%s\n' "$next"; last=$next; }
+       done
++  kill "$prod_pid" 2>/dev/null || true
++  exec 3<&-
+ }
+ 
+ overview_cmd() {
 diff --git a/lib/setters.sh b/lib/setters.sh
 index 0f3f6ae..9b55860 100644
 --- a/lib/setters.sh
@@ -66,6 +200,58 @@ index 9cf931f..491e88d 100644
      *) die "usage: omacontrol usage poll|refresh [provider]" ;;
    esac
  }
+diff --git a/lib/wifi.sh b/lib/wifi.sh
+index b6b4f4c..b1f60e8 100644
+--- a/lib/wifi.sh
++++ b/lib/wifi.sh
+@@ -346,10 +346,8 @@ wifi_cmd() {
+     list) wifi_state ;;
+     wired) wired_state ;;
+     rescan)
+-      nmcli dev wifi rescan >/dev/null 2>&1 || true
+-      # A scan takes a moment to land; without the pause the list that comes
+-      # back is the one we already had.
+-      sleep 2
++      # Trigger a fresh scan and wait for completion so returned state includes newly discovered APs
++      nmcli dev wifi list --rescan yes >/dev/null 2>&1 || nmcli dev wifi rescan >/dev/null 2>&1 || true
+       wifi_state ;;
+     publicip) public_ip_fetch ;;
+     speedtest)
+diff --git a/sections/NetworkSection.qml b/sections/NetworkSection.qml
+index 2183427..3fe3971 100644
+--- a/sections/NetworkSection.qml
++++ b/sections/NetworkSection.qml
+@@ -238,19 +238,24 @@ Ui.SectionBody {
+     onTriggered: { page.app.pollWifiLink(); page.app.pollWifiWired() }
+   }
+ 
+-  // The networks themselves, which used to arrive with the state document and
+-  // now have no other source: NetworkManager is asked by this page while it is
+-  // on screen, and by nothing else. Slower than the link readings above,
+-  // because a scan is rate-limited and the list moves by the minute rather
+-  // than by the second.
++  // Refresh cached results independently of radio scans.
+   Timer {
+-    interval: 5000
++    interval: 3000
+     running: page.app.shown
+     repeat: true
+     triggeredOnStart: true
+     onTriggered: page.app.pollWifi()
+   }
+ 
++  // Request fresh radio scans periodically without triggering NetworkManager rate-limiting.
++  Timer {
++    interval: 15000
++    running: page.app.shown && page.radioOn
++    repeat: true
++    triggeredOnStart: true
++    onTriggered: page.app.scanWifi()
++  }
++
+   // ---- what you are on -----------------------------------------------------
+   // The name, what the link is, and Disconnect all live *inside* the card with
+   // the readings, rather than as a group heading above it: they describe the
 diff --git a/sections/UsageSection.qml b/sections/UsageSection.qml
 index 9a790b2..42ad4fb 100644
 --- a/sections/UsageSection.qml

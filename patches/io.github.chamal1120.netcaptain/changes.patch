@@ -1,0 +1,402 @@
+diff --git a/Model.js b/Model.js
+index 147147a..6d1f684 100644
+--- a/Model.js
++++ b/Model.js
+@@ -210,6 +210,47 @@ function formatRate(bytesPerSecond, formatNumber) {
+   return formatBytes(bytesPerSecond, formatNumber) + "/s"
+ }
+ 
++function formatBarRate(bytesPerSecond, formatNumber) {
++  var fmt = typeof formatNumber === "function" ? formatNumber : function(v, d) { return Number(v).toFixed(d) }
++  var units = ["B/s", "K/s", "M/s", "G/s", "T/s"]
++  var value = Math.max(0, Number(bytesPerSecond) || 0)
++  var unit = 0
++  while (value >= 1000 && unit < units.length - 1) {
++    value /= 1000
++    unit++
++  }
++  var decimals = unit === 0 ? 0 : (value < 10 ? 1 : 0)
++  return fmt(value, decimals) + " " + units[unit]
++}
++
++function normalizeSpeedMode(mode) {
++  var m = String(mode || "Both").toLowerCase()
++  if (m === "download" || m === "down") return "Download"
++  if (m === "icon only" || m === "icon") return "Icon only"
++  return "Both"
++}
++
++function nextSpeedMode(mode) {
++  var cur = normalizeSpeedMode(mode)
++  if (cur === "Both") return "Download"
++  if (cur === "Download") return "Icon only"
++  return "Both"
++}
++
++function barSpeedText(rxRate, txRate, mode, connected, formatNumber) {
++  var m = normalizeSpeedMode(mode)
++  if (!connected || m === "Icon only") return ""
++  if (m === "Download") return "↓ " + formatBarRate(rxRate, formatNumber)
++  return "↓ " + formatBarRate(rxRate, formatNumber) + "  ↑ " + formatBarRate(txRate, formatNumber)
++}
++
++function verticalSpeedLines(rxRate, txRate, mode, connected, formatNumber) {
++  var m = normalizeSpeedMode(mode)
++  if (!connected || m === "Icon only") return [BAR_ICON]
++  if (m === "Download") return ["↓", formatBarRate(rxRate, formatNumber)]
++  return ["↓", formatBarRate(rxRate, formatNumber), "↑", formatBarRate(txRate, formatNumber)]
++}
++
+ var LIMIT_MAX = 1e15
+ 
+ // "2 GB", "1.5gb", "500 MB", "750M", or a bare number of GB. Empty clears the
+diff --git a/Panel.qml b/Panel.qml
+index c221d42..cd57643 100644
+--- a/Panel.qml
++++ b/Panel.qml
+@@ -44,6 +44,86 @@ Panel {
+ 
+   readonly property var active: summary ? summary.active : null
+   readonly property string activeName: active ? active.connection : ""
++  readonly property string activeIface: active ? active.iface : ""
++  readonly property string barSpeedMode: Model.normalizeSpeedMode(setting("barSpeedMode", "Both"))
++  readonly property bool iconOnly: barSpeedMode === "Icon only"
++  readonly property bool vertical: bar ? bar.vertical : false
++
++  property real prevRxBytes: -1
++  property real prevRxMs: 0
++  property real liveRxRate: 0
++  property bool liveRxReady: false
++  property real prevTxBytes: -1
++  property real prevTxMs: 0
++  property real liveTxRate: 0
++  property bool liveTxReady: false
++
++  readonly property var currentRate: {
++    var fallback = summary && summary.rate ? summary.rate : ({ rx: 0, tx: 0 })
++    if (activeIface === "") return ({ rx: 0, tx: 0 })
++    return {
++      rx: liveRxReady ? liveRxRate : (Number(fallback.rx) || 0),
++      tx: liveTxReady ? liveTxRate : (Number(fallback.tx) || 0)
++    }
++  }
++  readonly property bool stackedMode: !root.vertical && !root.iconOnly && root.activeIface !== "" && root.barSpeedMode === "Both"
++  readonly property string rxSpeedLabel: Model.formatBarRate(currentRate.rx, Commons.I18n.formatNumber)
++  readonly property string txSpeedLabel: Model.formatBarRate(currentRate.tx, Commons.I18n.formatNumber)
++  readonly property string barText: Model.barSpeedText(
++    currentRate.rx, currentRate.tx, barSpeedMode, activeIface !== "", Commons.I18n.formatNumber
++  )
++  readonly property var verticalLines: Model.verticalSpeedLines(
++    currentRate.rx, currentRate.tx, barSpeedMode, activeIface !== "", Commons.I18n.formatNumber
++  )
++  readonly property real minBarWidth: Math.ceil(
++    speedMetrics.advanceWidth("↓ 999 K/s")
++    + button.scaledHorizontalMargin * 2
++  )
++  readonly property real stackedMinWidth: Math.ceil(stackedMetrics.advanceWidth("↓ 999 K/s"))
++  readonly property real openPanelIndicatorWidth: {
++    if ((root.iconOnly || root.activeIface === "") && !root.vertical && iconGlyph)
++      return Math.max(1, Math.round(iconGlyph.tightWidth))
++    if (root.stackedMode && stackedChip)
++      return Math.round(stackedChip.width)
++    return button.labelWidth
++  }
++  readonly property real openPanelIndicatorHeight: Math.max(Style.space(10), Math.round(Style.bar.iconSlot * 0.55))
++
++  onActiveIfaceChanged: {
++    prevRxBytes = -1; prevRxMs = 0; liveRxRate = 0; liveRxReady = false
++    prevTxBytes = -1; prevTxMs = 0; liveTxRate = 0; liveTxReady = false
++  }
++
++  function sampleCounter(rawText, isRx) {
++    var bytes = Number(String(rawText || "").trim())
++    if (!isFinite(bytes) || bytes < 0) return
++    var now = Date.now()
++    if (isRx) {
++      if (prevRxBytes >= 0 && bytes >= prevRxBytes && now > prevRxMs) {
++        liveRxRate = (bytes - prevRxBytes) * 1000 / (now - prevRxMs)
++        liveRxReady = true
++      }
++      prevRxBytes = bytes
++      prevRxMs = now
++    } else {
++      if (prevTxBytes >= 0 && bytes >= prevTxBytes && now > prevTxMs) {
++        liveTxRate = (bytes - prevTxBytes) * 1000 / (now - prevTxMs)
++        liveTxReady = true
++      }
++      prevTxBytes = bytes
++      prevTxMs = now
++    }
++  }
++
++  function cycleBarSpeedMode() {
++    var next = Model.nextSpeedMode(root.barSpeedMode)
++    var entry = { id: root.moduleName }
++    for (var key in root.settings) if (key !== "id") entry[key] = root.settings[key]
++    entry.barSpeedMode = next
++    root.settings = entry
++    if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
++      root.bar.shell.updateEntryInline(root.moduleName, entry)
++  }
+   // The network the chart and totals follow; "" means all of them, which is
+   // also where "This network" falls back to while disconnected.
+   readonly property string scopeConnection: scope === "pinned" ? pinnedName
+@@ -279,17 +359,179 @@ Panel {
+     onTriggered: root.refresh()
+   }
+ 
+-  BarIconButton {
++  FileView {
++    id: rxCounterFile
++    path: root.activeIface !== "" ? ("/sys/class/net/" + root.activeIface + "/statistics/rx_bytes") : ""
++    watchChanges: false
++    printErrors: false
++    onLoaded: root.sampleCounter(text(), true)
++    onLoadFailed: { root.prevRxBytes = -1; root.liveRxReady = false }
++  }
++
++  FileView {
++    id: txCounterFile
++    path: root.activeIface !== "" ? ("/sys/class/net/" + root.activeIface + "/statistics/tx_bytes") : ""
++    watchChanges: false
++    printErrors: false
++    onLoaded: root.sampleCounter(text(), false)
++    onLoadFailed: { root.prevTxBytes = -1; root.liveTxReady = false }
++  }
++
++  Timer {
++    interval: 1000
++    running: root.activeIface !== ""
++    repeat: true
++    onTriggered: {
++      rxCounterFile.reload()
++      txCounterFile.reload()
++    }
++  }
++
++  FontMetrics {
++    id: speedMetrics
++    font.family: button.fontFamily
++    font.pixelSize: button.fontSize
++  }
++
++  FontMetrics {
++    id: stackedMetrics
++    font.family: button.fontFamily
++    font.pixelSize: Math.max(8, Math.round(button.fontSize * 0.74))
++  }
++
++  WidgetButton {
+     id: button
+     anchors.fill: parent
+     bar: root.bar
+-    text: Model.BAR_ICON
++    text: root.vertical || root.stackedMode ? "" : root.barText
++    labelVisible: !root.vertical && !root.iconOnly && !root.stackedMode && root.activeIface !== ""
++    hasVisualContent: root.vertical ? root.verticalLines.length > 0 : true
++    fixedWidth: {
++      if (root.vertical) return -1
++      if (root.iconOnly || root.activeIface === "") return Style.bar.iconSlot
++      if (root.stackedMode) return Math.round(stackedChip.width + button.scaledHorizontalMargin * 2)
++      return Math.max(root.minBarWidth, button.labelWidth + button.scaledHorizontalMargin * 2)
++    }
++    fixedHeight: root.vertical ? root.verticalLines.length * Style.bar.iconSlot : -1
++    horizontalMargin: 8.5
+     tooltipText: root.opened || !root.summary ? ""
+-      : strings.t("tooltip.today").arg(root.bytes(root.todayActive.rx)).arg(root.bytes(root.todayActive.tx))
++      : (root.activeIface !== ""
++        ? strings.t("tooltip.live").arg(root.rate(root.currentRate.rx)).arg(root.rate(root.currentRate.tx))
++          .arg(root.bytes(root.todayActive.rx)).arg(root.bytes(root.todayActive.tx))
++        : strings.t("tooltip.today").arg(root.bytes(root.todayActive.rx)).arg(root.bytes(root.todayActive.tx)))
+     onPressed: function(b) {
+-      if (b === Qt.MiddleButton) root.refresh()
++      if (b === Qt.RightButton) root.cycleBarSpeedMode()
++      else if (b === Qt.MiddleButton) root.refresh()
+       else root.toggle()
+     }
++
++    Column {
++      id: stackedChip
++      visible: root.stackedMode
++      anchors.centerIn: parent
++      width: Math.max(root.stackedMinWidth, rxRow.implicitWidth, txRow.implicitWidth)
++      spacing: 0
++      scale: button.pressScale
++
++      readonly property int chipFontSize: Math.max(8, Math.round(button.fontSize * 0.74))
++      readonly property color chipColor: button.active && button.useActiveColor ? button.activeColor : button.foreground
++
++      Item {
++        id: rxRow
++        width: parent.width
++        implicitWidth: rxArrow.implicitWidth + Style.space(3) + rxVal.implicitWidth
++        implicitHeight: Math.max(rxArrow.implicitHeight, rxVal.implicitHeight)
++
++        Text {
++          id: rxArrow
++          textFormat: Text.PlainText
++          anchors.left: parent.left
++          anchors.verticalCenter: parent.verticalCenter
++          text: "↓"
++          color: stackedChip.chipColor
++          opacity: 0.78
++          font.family: button.fontFamily
++          font.pixelSize: stackedChip.chipFontSize
++          renderType: Text.NativeRendering
++        }
++
++        Text {
++          id: rxVal
++          textFormat: Text.PlainText
++          anchors.right: parent.right
++          anchors.verticalCenter: parent.verticalCenter
++          text: root.rxSpeedLabel
++          color: stackedChip.chipColor
++          font.family: button.fontFamily
++          font.pixelSize: stackedChip.chipFontSize
++          renderType: Text.NativeRendering
++        }
++      }
++
++      Item {
++        id: txRow
++        width: parent.width
++        implicitWidth: txArrow.implicitWidth + Style.space(3) + txVal.implicitWidth
++        implicitHeight: Math.max(txArrow.implicitHeight, txVal.implicitHeight)
++
++        Text {
++          id: txArrow
++          textFormat: Text.PlainText
++          anchors.left: parent.left
++          anchors.verticalCenter: parent.verticalCenter
++          text: "↑"
++          color: stackedChip.chipColor
++          opacity: 0.55
++          font.family: button.fontFamily
++          font.pixelSize: stackedChip.chipFontSize
++          renderType: Text.NativeRendering
++        }
++
++        Text {
++          id: txVal
++          textFormat: Text.PlainText
++          anchors.right: parent.right
++          anchors.verticalCenter: parent.verticalCenter
++          text: root.txSpeedLabel
++          color: stackedChip.chipColor
++          opacity: 0.72
++          font.family: button.fontFamily
++          font.pixelSize: stackedChip.chipFontSize
++          renderType: Text.NativeRendering
++        }
++      }
++    }
++
++    OpticalGlyph {
++      id: iconGlyph
++      visible: !root.vertical && (root.iconOnly || root.activeIface === "")
++      anchors.fill: parent
++      text: Model.BAR_ICON
++      fontFamily: button.fontFamily
++      fontSize: button.fontSize
++      color: button.foreground
++    }
++
++    Column {
++      visible: root.vertical
++      anchors.fill: parent
++
++      Repeater {
++        model: root.verticalLines
++
++        OpticalGlyph {
++          required property string modelData
++          width: button.width
++          height: Style.bar.iconSlot
++          text: modelData
++          fontFamily: button.fontFamily
++          fontSize: modelData === Model.BAR_ICON
++            ? Style.font.icon
++            : (modelData.length > 4 ? button.fontSize * 0.8 : button.fontSize)
++          color: button.foreground
++        }
++      }
++    }
+   }
+ 
+   KeyboardPanel {
+diff --git a/i18n/en.json b/i18n/en.json
+index 42f11d6..7751367 100644
+--- a/i18n/en.json
++++ b/i18n/en.json
+@@ -1,5 +1,6 @@
+ {
+   "tooltip.today": "Today: ↓ %1  ↑ %2",
++  "tooltip.live": "↓ %1  ↑ %2 · Today: ↓ %3  ↑ %4",
+   "hero.disconnected": "Not connected",
+   "hero.activeConnection": "Active connection",
+   "hero.rate": "↓ %1  ↑ %2",
+diff --git a/manifest.json b/manifest.json
+index 0d316a5..5a98aa3 100644
+--- a/manifest.json
++++ b/manifest.json
+@@ -34,6 +34,13 @@
+         "step": 10,
+         "defaultValue": 60
+       },
++      {
++        "key": "barSpeedMode",
++        "type": "enum",
++        "label": "Bar display",
++        "options": ["Both", "Download", "Icon only"],
++        "defaultValue": "Both"
++      },
+       {
+         "key": "notifyLimits",
+         "type": "boolean",
+diff --git a/tests/model.test.mjs b/tests/model.test.mjs
+index d70e809..caad82f 100644
+--- a/tests/model.test.mjs
++++ b/tests/model.test.mjs
+@@ -6,7 +6,7 @@ import vm from "node:vm"
+ 
+ const source = readFileSync(new URL("../Model.js", import.meta.url), "utf8").replace(/^\.pragma library\s*/, "")
+ const Model = {}
+-vm.runInNewContext(source + "\nObject.assign(out, { parseSummary, daySeries, monthSeries, sumRows, connectionTotals, formatBytes, clampInterval, seriesMax, shortName, parseLimit, limitText, limitState, limitFor, parseCycleDay, cycleSeries, topConnections })", { out: Model, String, Math, Number, JSON, Array, Date, isFinite })
++vm.runInNewContext(source + "\nObject.assign(out, { parseSummary, daySeries, monthSeries, sumRows, connectionTotals, formatBytes, formatRate, formatBarRate, normalizeSpeedMode, nextSpeedMode, barSpeedText, verticalSpeedLines, clampInterval, seriesMax, shortName, parseLimit, limitText, limitState, limitFor, parseCycleDay, cycleSeries, topConnections })", { out: Model, String, Math, Number, JSON, Array, Date, isFinite })
+ 
+ const raw = JSON.stringify({
+   version: 1,
+@@ -130,3 +130,17 @@ test("billing cycles become chart slots", () => {
+   assert.equal(Model.topConnections(series[1].connections, 6).map(c => c.name).join(","), "Home,Cafe")
+   assert.equal(Model.cycleSeries(Model.limitFor(s, "Elsewhere")).length, 0)
+ })
++
++test("bar speed formatting and mode cycling", () => {
++  assert.equal(Model.normalizeSpeedMode(undefined), "Both")
++  assert.equal(Model.normalizeSpeedMode("download"), "Download")
++  assert.equal(Model.normalizeSpeedMode("icon"), "Icon only")
++  assert.equal(Model.nextSpeedMode("Both"), "Download")
++  assert.equal(Model.nextSpeedMode("Download"), "Icon only")
++  assert.equal(Model.nextSpeedMode("Icon only"), "Both")
++  assert.equal(Model.barSpeedText(1500000, 250000, "Both", true), "↓ 1.5 M/s  ↑ 250 K/s")
++  assert.equal(Model.barSpeedText(1500000, 250000, "Download", true), "↓ 1.5 M/s")
++  assert.equal(Model.barSpeedText(1500000, 250000, "Icon only", true), "")
++  assert.equal(Model.barSpeedText(1500000, 250000, "Both", false), "")
++  assert.deepEqual(Array.from(Model.verticalSpeedLines(1000, 500, "Download", true)), ["↓", "1.0 K/s"])
++})
+diff --git a/ui/HeroSection.qml b/ui/HeroSection.qml
+index 51b3ce8..c2c7dd5 100644
+--- a/ui/HeroSection.qml
++++ b/ui/HeroSection.qml
+@@ -36,8 +36,8 @@ Item {
+ 
+     Label {
+       width: parent.width
+-      text: (panel.summary && panel.summary.rate && panel.activeName !== ""
+-        ? panel.strings.t("hero.rate").arg(panel.rate(panel.summary.rate.rx)).arg(panel.rate(panel.summary.rate.tx))
++      text: (panel.summary && panel.activeName !== ""
++        ? panel.strings.t("hero.rate").arg(panel.rate(panel.currentRate.rx)).arg(panel.rate(panel.currentRate.tx))
+         : panel.strings.t("hero.activeConnection")).toUpperCase()
+       color: Qt.darker(panel.barForeground, 1.4)
+       font.pixelSize: Style.font.caption

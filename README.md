@@ -61,7 +61,7 @@ shorter animations, immediate replacements, and sender-requested timeouts.
 
 ## Changes to third-party plugins
 
-`patches/` preserves local changes to Lock Screen Explorer, OmaControl, and
+`patches/` preserves local changes to Lock Screen Explorer, NetCaptain, OmaControl, and
 Omascreentime. Each directory includes:
 
 - `upstream.json`: original repository and exact base commit.

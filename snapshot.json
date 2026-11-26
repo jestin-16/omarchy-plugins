@@ -1,5 +1,5 @@
 {
-  "snapshot_date": "2026-11-25",
+  "snapshot_date": "2026-11-26",
   "custom_plugins": [
     {
       "id": "jestin.agents",
@@ -47,6 +47,11 @@
     }
   ],
   "upstream_patches": [
+    {
+      "id": "io.github.chamal1120.netcaptain",
+      "upstream": "https://github.com/Chamal1120/omarchy-netcaptain.git",
+      "base_commit": "d3f412f5c46c43ce3b0df075cf5093088c6185a2"
+    },
     {
       "id": "io.github.sirjul1337.lock-explorer",
       "upstream": "https://github.com/SirJul1337/omarchy-lock-explorer.git",
