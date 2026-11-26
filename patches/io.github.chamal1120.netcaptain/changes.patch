@@ -51,7 +51,7 @@ index 147147a..6d1f684 100644
  
  // "2 GB", "1.5gb", "500 MB", "750M", or a bare number of GB. Empty clears the
 diff --git a/Panel.qml b/Panel.qml
-index c221d42..cd57643 100644
+index c221d42..99d1b62 100644
 --- a/Panel.qml
 +++ b/Panel.qml
 @@ -44,6 +44,86 @@ Panel {
@@ -93,7 +93,7 @@ index c221d42..cd57643 100644
 +    speedMetrics.advanceWidth("↓ 999 K/s")
 +    + button.scaledHorizontalMargin * 2
 +  )
-+  readonly property real stackedMinWidth: Math.ceil(stackedMetrics.advanceWidth("↓ 999 K/s"))
++  readonly property real stackedMinWidth: Math.ceil(stackedMetrics.advanceWidth("↓ 99 K/s"))
 +  readonly property real openPanelIndicatorWidth: {
 +    if ((root.iconOnly || root.activeIface === "") && !root.vertical && iconGlyph)
 +      return Math.max(1, Math.round(iconGlyph.tightWidth))
@@ -141,7 +141,7 @@ index c221d42..cd57643 100644
    // The network the chart and totals follow; "" means all of them, which is
    // also where "This network" falls back to while disconnected.
    readonly property string scopeConnection: scope === "pinned" ? pinnedName
-@@ -279,17 +359,179 @@ Panel {
+@@ -279,17 +359,188 @@ Panel {
      onTriggered: root.refresh()
    }
  
@@ -183,7 +183,8 @@ index c221d42..cd57643 100644
 +  FontMetrics {
 +    id: stackedMetrics
 +    font.family: button.fontFamily
-+    font.pixelSize: Math.max(8, Math.round(button.fontSize * 0.74))
++    font.pixelSize: Math.max(8, Math.round(button.fontSize * 0.67))
++    font.weight: Font.Medium
 +  }
 +
 +  WidgetButton {
@@ -201,7 +202,7 @@ index c221d42..cd57643 100644
 +      return Math.max(root.minBarWidth, button.labelWidth + button.scaledHorizontalMargin * 2)
 +    }
 +    fixedHeight: root.vertical ? root.verticalLines.length * Style.bar.iconSlot : -1
-+    horizontalMargin: 8.5
++    horizontalMargin: root.stackedMode ? 7 : 8.5
      tooltipText: root.opened || !root.summary ? ""
 -      : strings.t("tooltip.today").arg(root.bytes(root.todayActive.rx)).arg(root.bytes(root.todayActive.tx))
 +      : (root.activeIface !== ""
@@ -223,71 +224,79 @@ index c221d42..cd57643 100644
 +      spacing: 0
 +      scale: button.pressScale
 +
-+      readonly property int chipFontSize: Math.max(8, Math.round(button.fontSize * 0.74))
++      readonly property int chipFontSize: Math.max(8, Math.round(button.fontSize * 0.67))
++      readonly property int rowHeight: chipFontSize + Style.space(2)
 +      readonly property color chipColor: button.active && button.useActiveColor ? button.activeColor : button.foreground
 +
 +      Item {
-+        id: rxRow
 +        width: parent.width
-+        implicitWidth: rxArrow.implicitWidth + Style.space(3) + rxVal.implicitWidth
-+        implicitHeight: Math.max(rxArrow.implicitHeight, rxVal.implicitHeight)
++        height: stackedChip.rowHeight
 +
-+        Text {
-+          id: rxArrow
-+          textFormat: Text.PlainText
-+          anchors.left: parent.left
-+          anchors.verticalCenter: parent.verticalCenter
-+          text: "↓"
-+          color: stackedChip.chipColor
-+          opacity: 0.78
-+          font.family: button.fontFamily
-+          font.pixelSize: stackedChip.chipFontSize
-+          renderType: Text.NativeRendering
-+        }
-+
-+        Text {
-+          id: rxVal
-+          textFormat: Text.PlainText
++        Row {
++          id: rxRow
 +          anchors.right: parent.right
 +          anchors.verticalCenter: parent.verticalCenter
-+          text: root.rxSpeedLabel
-+          color: stackedChip.chipColor
-+          font.family: button.fontFamily
-+          font.pixelSize: stackedChip.chipFontSize
-+          renderType: Text.NativeRendering
++          spacing: Style.space(2)
++
++          Text {
++            textFormat: Text.PlainText
++            anchors.verticalCenter: parent.verticalCenter
++            text: "↓"
++            color: stackedChip.chipColor
++            opacity: 0.72
++            font.family: button.fontFamily
++            font.pixelSize: stackedChip.chipFontSize
++            font.weight: Font.Medium
++            renderType: Text.NativeRendering
++          }
++
++          Text {
++            textFormat: Text.PlainText
++            anchors.verticalCenter: parent.verticalCenter
++            text: root.rxSpeedLabel
++            color: stackedChip.chipColor
++            opacity: 0.96
++            font.family: button.fontFamily
++            font.pixelSize: stackedChip.chipFontSize
++            font.weight: Font.Medium
++            renderType: Text.NativeRendering
++          }
 +        }
 +      }
 +
 +      Item {
-+        id: txRow
 +        width: parent.width
-+        implicitWidth: txArrow.implicitWidth + Style.space(3) + txVal.implicitWidth
-+        implicitHeight: Math.max(txArrow.implicitHeight, txVal.implicitHeight)
++        height: stackedChip.rowHeight
 +
-+        Text {
-+          id: txArrow
-+          textFormat: Text.PlainText
-+          anchors.left: parent.left
-+          anchors.verticalCenter: parent.verticalCenter
-+          text: "↑"
-+          color: stackedChip.chipColor
-+          opacity: 0.55
-+          font.family: button.fontFamily
-+          font.pixelSize: stackedChip.chipFontSize
-+          renderType: Text.NativeRendering
-+        }
-+
-+        Text {
-+          id: txVal
-+          textFormat: Text.PlainText
++        Row {
++          id: txRow
 +          anchors.right: parent.right
 +          anchors.verticalCenter: parent.verticalCenter
-+          text: root.txSpeedLabel
-+          color: stackedChip.chipColor
-+          opacity: 0.72
-+          font.family: button.fontFamily
-+          font.pixelSize: stackedChip.chipFontSize
-+          renderType: Text.NativeRendering
++          spacing: Style.space(2)
++
++          Text {
++            textFormat: Text.PlainText
++            anchors.verticalCenter: parent.verticalCenter
++            text: "↑"
++            color: stackedChip.chipColor
++            opacity: 0.45
++            font.family: button.fontFamily
++            font.pixelSize: stackedChip.chipFontSize
++            font.weight: Font.Medium
++            renderType: Text.NativeRendering
++          }
++
++          Text {
++            textFormat: Text.PlainText
++            anchors.verticalCenter: parent.verticalCenter
++            text: root.txSpeedLabel
++            color: stackedChip.chipColor
++            opacity: 0.66
++            font.family: button.fontFamily
++            font.pixelSize: stackedChip.chipFontSize
++            font.weight: Font.Medium
++            renderType: Text.NativeRendering
++          }
 +        }
 +      }
 +    }
