@@ -1,8 +1,8 @@
 diff --git a/Model.js b/Model.js
-index 147147a..6d1f684 100644
+index 147147a..ff47acf 100644
 --- a/Model.js
 +++ b/Model.js
-@@ -210,6 +210,47 @@ function formatRate(bytesPerSecond, formatNumber) {
+@@ -210,6 +210,93 @@ function formatRate(bytesPerSecond, formatNumber) {
    return formatBytes(bytesPerSecond, formatNumber) + "/s"
  }
  
@@ -16,7 +16,53 @@ index 147147a..6d1f684 100644
 +    unit++
 +  }
 +  var decimals = unit === 0 ? 0 : (value < 10 ? 1 : 0)
++  // Prevent rounding from spilling into an extra digit (10.0 or 1000).
++  if (decimals === 1 && Number(value.toFixed(1)) >= 10) decimals = 0
++  if (decimals === 0 && Math.round(value) >= 1000 && unit < units.length - 1) {
++    value /= 1000
++    unit++
++    decimals = 1
++  }
 +  return fmt(value, decimals) + " " + units[unit]
++}
++
++// Extract cumulative rx/tx byte counters for `iface` from /proc/net/dev.
++function parseProcNetDev(rawText, iface) {
++  if (!iface) return null
++  var lines = String(rawText || "").split("\n")
++  for (var i = 0; i < lines.length; i++) {
++    var line = lines[i]
++    var colon = line.indexOf(":")
++    if (colon < 0) continue
++    if (line.slice(0, colon).trim() !== iface) continue
++    var fields = line.slice(colon + 1).trim().split(/\s+/)
++    if (fields.length < 9) return null
++    var rx = Number(fields[0])
++    var tx = Number(fields[8])
++    if (!isFinite(rx) || rx < 0 || !isFinite(tx) || tx < 0) return null
++    return { rx: rx, tx: tx }
++  }
++  return null
++}
++
++// Compute live rx/tx bytes/sec from consecutive counter snapshots.
++// Stale intervals (> 10s, e.g. suspend/resume) or counter resets re-baseline.
++function computeLiveRate(prevSample, nextSample, nowMs) {
++  if (!nextSample || !isFinite(nowMs) || nowMs <= 0) return null
++  var sample = { rx: nextSample.rx, tx: nextSample.tx, ms: nowMs }
++  if (!prevSample || !isFinite(prevSample.ms) || prevSample.ms <= 0) {
++    return { sample: sample, rxRate: 0, txRate: 0, ready: false }
++  }
++  var elapsedMs = nowMs - prevSample.ms
++  if (elapsedMs <= 0 || elapsedMs > 10000 || nextSample.rx < prevSample.rx || nextSample.tx < prevSample.tx) {
++    return { sample: sample, rxRate: 0, txRate: 0, ready: false }
++  }
++  return {
++    sample: sample,
++    rxRate: (nextSample.rx - prevSample.rx) * 1000 / elapsedMs,
++    txRate: (nextSample.tx - prevSample.tx) * 1000 / elapsedMs,
++    ready: true
++  }
 +}
 +
 +function normalizeSpeedMode(mode) {
@@ -51,10 +97,10 @@ index 147147a..6d1f684 100644
  
  // "2 GB", "1.5gb", "500 MB", "750M", or a bare number of GB. Empty clears the
 diff --git a/Panel.qml b/Panel.qml
-index c221d42..99d1b62 100644
+index c221d42..9347eb8 100644
 --- a/Panel.qml
 +++ b/Panel.qml
-@@ -44,6 +44,86 @@ Panel {
+@@ -44,6 +44,88 @@ Panel {
  
    readonly property var active: summary ? summary.active : null
    readonly property string activeName: active ? active.connection : ""
@@ -63,37 +109,36 @@ index c221d42..99d1b62 100644
 +  readonly property bool iconOnly: barSpeedMode === "Icon only"
 +  readonly property bool vertical: bar ? bar.vertical : false
 +
-+  property real prevRxBytes: -1
-+  property real prevRxMs: 0
-+  property real liveRxRate: 0
-+  property bool liveRxReady: false
-+  property real prevTxBytes: -1
-+  property real prevTxMs: 0
-+  property real liveTxRate: 0
-+  property bool liveTxReady: false
++  property var prevCounterSample: null
++  property var liveRate: ({ rx: 0, tx: 0 })
++  property bool liveRateReady: false
++  readonly property bool livePollingNeeded: root.activeIface !== "" && (!root.iconOnly || root.opened || button.tooltipHovered)
 +
 +  readonly property var currentRate: {
 +    var fallback = summary && summary.rate ? summary.rate : ({ rx: 0, tx: 0 })
 +    if (activeIface === "") return ({ rx: 0, tx: 0 })
 +    return {
-+      rx: liveRxReady ? liveRxRate : (Number(fallback.rx) || 0),
-+      tx: liveTxReady ? liveTxRate : (Number(fallback.tx) || 0)
++      rx: liveRateReady ? liveRate.rx : (Number(fallback.rx) || 0),
++      tx: liveRateReady ? liveRate.tx : (Number(fallback.tx) || 0)
 +    }
 +  }
 +  readonly property bool stackedMode: !root.vertical && !root.iconOnly && root.activeIface !== "" && root.barSpeedMode === "Both"
-+  readonly property string rxSpeedLabel: Model.formatBarRate(currentRate.rx, Commons.I18n.formatNumber)
-+  readonly property string txSpeedLabel: Model.formatBarRate(currentRate.tx, Commons.I18n.formatNumber)
-+  readonly property string barText: Model.barSpeedText(
-+    currentRate.rx, currentRate.tx, barSpeedMode, activeIface !== "", Commons.I18n.formatNumber
-+  )
-+  readonly property var verticalLines: Model.verticalSpeedLines(
-+    currentRate.rx, currentRate.tx, barSpeedMode, activeIface !== "", Commons.I18n.formatNumber
-+  )
++  readonly property string rxSpeedLabel: root.stackedMode ? Model.formatBarRate(currentRate.rx, Commons.I18n.formatNumber) : ""
++  readonly property string txSpeedLabel: root.stackedMode ? Model.formatBarRate(currentRate.tx, Commons.I18n.formatNumber) : ""
++  readonly property string barText: (!root.vertical && !root.stackedMode && !root.iconOnly && root.activeIface !== "")
++    ? Model.barSpeedText(currentRate.rx, currentRate.tx, barSpeedMode, true, Commons.I18n.formatNumber)
++    : ""
++  readonly property var verticalLines: root.vertical
++    ? Model.verticalSpeedLines(currentRate.rx, currentRate.tx, barSpeedMode, activeIface !== "", Commons.I18n.formatNumber)
++    : []
 +  readonly property real minBarWidth: Math.ceil(
 +    speedMetrics.advanceWidth("↓ 999 K/s")
 +    + button.scaledHorizontalMargin * 2
 +  )
-+  readonly property real stackedMinWidth: Math.ceil(stackedMetrics.advanceWidth("↓ 99 K/s"))
++  readonly property real stackedMinWidth: Math.ceil(Math.max(
++    stackedMetrics.advanceWidth("↓ 999 K/s"),
++    stackedMetrics.advanceWidth("↑ 999 K/s")
++  ))
 +  readonly property real openPanelIndicatorWidth: {
 +    if ((root.iconOnly || root.activeIface === "") && !root.vertical && iconGlyph)
 +      return Math.max(1, Math.round(iconGlyph.tightWidth))
@@ -103,29 +148,32 @@ index c221d42..99d1b62 100644
 +  }
 +  readonly property real openPanelIndicatorHeight: Math.max(Style.space(10), Math.round(Style.bar.iconSlot * 0.55))
 +
-+  onActiveIfaceChanged: {
-+    prevRxBytes = -1; prevRxMs = 0; liveRxRate = 0; liveRxReady = false
-+    prevTxBytes = -1; prevTxMs = 0; liveTxRate = 0; liveTxReady = false
++  function resetLiveRate() {
++    prevCounterSample = null
++    liveRate = ({ rx: 0, tx: 0 })
++    liveRateReady = false
 +  }
 +
-+  function sampleCounter(rawText, isRx) {
-+    var bytes = Number(String(rawText || "").trim())
-+    if (!isFinite(bytes) || bytes < 0) return
-+    var now = Date.now()
-+    if (isRx) {
-+      if (prevRxBytes >= 0 && bytes >= prevRxBytes && now > prevRxMs) {
-+        liveRxRate = (bytes - prevRxBytes) * 1000 / (now - prevRxMs)
-+        liveRxReady = true
-+      }
-+      prevRxBytes = bytes
-+      prevRxMs = now
++  onActiveIfaceChanged: resetLiveRate()
++  onLivePollingNeededChanged: if (!livePollingNeeded) resetLiveRate()
++
++  function sampleNetDev(rawText) {
++    var parsed = Model.parseProcNetDev(rawText, root.activeIface)
++    if (!parsed) {
++      resetLiveRate()
++      return
++    }
++    var step = Model.computeLiveRate(root.prevCounterSample, parsed, Date.now())
++    if (!step) {
++      resetLiveRate()
++      return
++    }
++    root.prevCounterSample = step.sample
++    if (step.ready) {
++      root.liveRate = ({ rx: step.rxRate, tx: step.txRate })
++      root.liveRateReady = true
 +    } else {
-+      if (prevTxBytes >= 0 && bytes >= prevTxBytes && now > prevTxMs) {
-+        liveTxRate = (bytes - prevTxBytes) * 1000 / (now - prevTxMs)
-+        liveTxReady = true
-+      }
-+      prevTxBytes = bytes
-+      prevTxMs = now
++      root.liveRateReady = false
 +    }
 +  }
 +
@@ -141,37 +189,25 @@ index c221d42..99d1b62 100644
    // The network the chart and totals follow; "" means all of them, which is
    // also where "This network" falls back to while disconnected.
    readonly property string scopeConnection: scope === "pinned" ? pinnedName
-@@ -279,17 +359,188 @@ Panel {
+@@ -279,17 +361,160 @@ Panel {
      onTriggered: root.refresh()
    }
  
 -  BarIconButton {
 +  FileView {
-+    id: rxCounterFile
-+    path: root.activeIface !== "" ? ("/sys/class/net/" + root.activeIface + "/statistics/rx_bytes") : ""
++    id: netDevFile
++    path: root.livePollingNeeded ? "/proc/net/dev" : ""
 +    watchChanges: false
 +    printErrors: false
-+    onLoaded: root.sampleCounter(text(), true)
-+    onLoadFailed: { root.prevRxBytes = -1; root.liveRxReady = false }
-+  }
-+
-+  FileView {
-+    id: txCounterFile
-+    path: root.activeIface !== "" ? ("/sys/class/net/" + root.activeIface + "/statistics/tx_bytes") : ""
-+    watchChanges: false
-+    printErrors: false
-+    onLoaded: root.sampleCounter(text(), false)
-+    onLoadFailed: { root.prevTxBytes = -1; root.liveTxReady = false }
++    onLoaded: root.sampleNetDev(text())
++    onLoadFailed: root.resetLiveRate()
 +  }
 +
 +  Timer {
 +    interval: 1000
-+    running: root.activeIface !== ""
++    running: root.livePollingNeeded
 +    repeat: true
-+    onTriggered: {
-+      rxCounterFile.reload()
-+      txCounterFile.reload()
-+    }
++    onTriggered: netDevFile.reload()
 +  }
 +
 +  FontMetrics {
@@ -183,7 +219,7 @@ index c221d42..99d1b62 100644
 +  FontMetrics {
 +    id: stackedMetrics
 +    font.family: button.fontFamily
-+    font.pixelSize: Math.max(8, Math.round(button.fontSize * 0.67))
++    font.pixelSize: stackedChip.chipFontSize
 +    font.weight: Font.Medium
 +  }
 +
@@ -192,6 +228,8 @@ index c221d42..99d1b62 100644
      anchors.fill: parent
      bar: root.bar
 -    text: Model.BAR_ICON
+-    tooltipText: root.opened || !root.summary ? ""
+-      : strings.t("tooltip.today").arg(root.bytes(root.todayActive.rx)).arg(root.bytes(root.todayActive.tx))
 +    text: root.vertical || root.stackedMode ? "" : root.barText
 +    labelVisible: !root.vertical && !root.iconOnly && !root.stackedMode && root.activeIface !== ""
 +    hasVisualContent: root.vertical ? root.verticalLines.length > 0 : true
@@ -203,8 +241,7 @@ index c221d42..99d1b62 100644
 +    }
 +    fixedHeight: root.vertical ? root.verticalLines.length * Style.bar.iconSlot : -1
 +    horizontalMargin: root.stackedMode ? 7 : 8.5
-     tooltipText: root.opened || !root.summary ? ""
--      : strings.t("tooltip.today").arg(root.bytes(root.todayActive.rx)).arg(root.bytes(root.todayActive.tx))
++    tooltipText: root.opened || !root.summary || !button.tooltipHovered ? ""
 +      : (root.activeIface !== ""
 +        ? strings.t("tooltip.live").arg(root.rate(root.currentRate.rx)).arg(root.rate(root.currentRate.tx))
 +          .arg(root.bytes(root.todayActive.rx)).arg(root.bytes(root.todayActive.tx))
@@ -220,84 +257,68 @@ index c221d42..99d1b62 100644
 +      id: stackedChip
 +      visible: root.stackedMode
 +      anchors.centerIn: parent
-+      width: Math.max(root.stackedMinWidth, rxRow.implicitWidth, txRow.implicitWidth)
++      width: Math.max(root.stackedMinWidth, rxRow.naturalWidth, txRow.naturalWidth)
 +      spacing: 0
 +      scale: button.pressScale
 +
-+      readonly property int chipFontSize: Math.max(8, Math.round(button.fontSize * 0.67))
-+      readonly property int rowHeight: chipFontSize + Style.space(2)
++      readonly property int chipFontSize: Math.max(8, Math.round(button.fontSize * 0.75))
++      readonly property int rowHeight: chipFontSize + Style.space(1)
 +      readonly property color chipColor: button.active && button.useActiveColor ? button.activeColor : button.foreground
 +
-+      Item {
++      component SpeedRow: Item {
++        id: rowItem
++        required property string arrow
++        required property string value
++        required property real arrowOpacity
++        required property real valueOpacity
++        readonly property real naturalWidth: arrowLabel.implicitWidth + Style.space(2) + valueLabel.implicitWidth
++
 +        width: parent.width
 +        height: stackedChip.rowHeight
 +
-+        Row {
-+          id: rxRow
++        PlainText {
++          id: arrowLabel
++          owner: root
++          anchors.left: parent.left
++          anchors.verticalCenter: parent.verticalCenter
++          text: rowItem.arrow
++          color: stackedChip.chipColor
++          opacity: rowItem.arrowOpacity
++          font.family: button.fontFamily
++          font.pixelSize: stackedChip.chipFontSize
++          font.weight: Font.Medium
++          renderType: Text.NativeRendering
++        }
++
++        PlainText {
++          id: valueLabel
++          owner: root
 +          anchors.right: parent.right
 +          anchors.verticalCenter: parent.verticalCenter
-+          spacing: Style.space(2)
-+
-+          Text {
-+            textFormat: Text.PlainText
-+            anchors.verticalCenter: parent.verticalCenter
-+            text: "↓"
-+            color: stackedChip.chipColor
-+            opacity: 0.72
-+            font.family: button.fontFamily
-+            font.pixelSize: stackedChip.chipFontSize
-+            font.weight: Font.Medium
-+            renderType: Text.NativeRendering
-+          }
-+
-+          Text {
-+            textFormat: Text.PlainText
-+            anchors.verticalCenter: parent.verticalCenter
-+            text: root.rxSpeedLabel
-+            color: stackedChip.chipColor
-+            opacity: 0.96
-+            font.family: button.fontFamily
-+            font.pixelSize: stackedChip.chipFontSize
-+            font.weight: Font.Medium
-+            renderType: Text.NativeRendering
-+          }
++          text: rowItem.value
++          color: stackedChip.chipColor
++          opacity: rowItem.valueOpacity
++          font.family: button.fontFamily
++          font.pixelSize: stackedChip.chipFontSize
++          font.weight: Font.Medium
++          renderType: Text.NativeRendering
 +        }
 +      }
 +
-+      Item {
-+        width: parent.width
-+        height: stackedChip.rowHeight
++      SpeedRow {
++        id: rxRow
++        arrow: "↓"
++        value: root.rxSpeedLabel
++        arrowOpacity: root.currentRate.rx > 0 ? 0.78 : 0.55
++        valueOpacity: root.currentRate.rx > 0 ? 0.98 : 0.72
++      }
 +
-+        Row {
-+          id: txRow
-+          anchors.right: parent.right
-+          anchors.verticalCenter: parent.verticalCenter
-+          spacing: Style.space(2)
-+
-+          Text {
-+            textFormat: Text.PlainText
-+            anchors.verticalCenter: parent.verticalCenter
-+            text: "↑"
-+            color: stackedChip.chipColor
-+            opacity: 0.45
-+            font.family: button.fontFamily
-+            font.pixelSize: stackedChip.chipFontSize
-+            font.weight: Font.Medium
-+            renderType: Text.NativeRendering
-+          }
-+
-+          Text {
-+            textFormat: Text.PlainText
-+            anchors.verticalCenter: parent.verticalCenter
-+            text: root.txSpeedLabel
-+            color: stackedChip.chipColor
-+            opacity: 0.66
-+            font.family: button.fontFamily
-+            font.pixelSize: stackedChip.chipFontSize
-+            font.weight: Font.Medium
-+            renderType: Text.NativeRendering
-+          }
-+        }
++      SpeedRow {
++        id: txRow
++        arrow: "↑"
++        value: root.txSpeedLabel
++        arrowOpacity: root.currentRate.tx > 0 ? 0.66 : 0.42
++        valueOpacity: root.currentRate.tx > 0 ? 0.86 : 0.58
 +      }
 +    }
 +
@@ -364,7 +385,7 @@ index 0d316a5..5a98aa3 100644
          "key": "notifyLimits",
          "type": "boolean",
 diff --git a/tests/model.test.mjs b/tests/model.test.mjs
-index d70e809..caad82f 100644
+index d70e809..ad4ffed 100644
 --- a/tests/model.test.mjs
 +++ b/tests/model.test.mjs
 @@ -6,7 +6,7 @@ import vm from "node:vm"
@@ -372,11 +393,11 @@ index d70e809..caad82f 100644
  const source = readFileSync(new URL("../Model.js", import.meta.url), "utf8").replace(/^\.pragma library\s*/, "")
  const Model = {}
 -vm.runInNewContext(source + "\nObject.assign(out, { parseSummary, daySeries, monthSeries, sumRows, connectionTotals, formatBytes, clampInterval, seriesMax, shortName, parseLimit, limitText, limitState, limitFor, parseCycleDay, cycleSeries, topConnections })", { out: Model, String, Math, Number, JSON, Array, Date, isFinite })
-+vm.runInNewContext(source + "\nObject.assign(out, { parseSummary, daySeries, monthSeries, sumRows, connectionTotals, formatBytes, formatRate, formatBarRate, normalizeSpeedMode, nextSpeedMode, barSpeedText, verticalSpeedLines, clampInterval, seriesMax, shortName, parseLimit, limitText, limitState, limitFor, parseCycleDay, cycleSeries, topConnections })", { out: Model, String, Math, Number, JSON, Array, Date, isFinite })
++vm.runInNewContext(source + "\nObject.assign(out, { parseSummary, daySeries, monthSeries, sumRows, connectionTotals, formatBytes, formatRate, formatBarRate, parseProcNetDev, computeLiveRate, normalizeSpeedMode, nextSpeedMode, barSpeedText, verticalSpeedLines, clampInterval, seriesMax, shortName, parseLimit, limitText, limitState, limitFor, parseCycleDay, cycleSeries, topConnections })", { out: Model, String, Math, Number, JSON, Array, Date, isFinite })
  
  const raw = JSON.stringify({
    version: 1,
-@@ -130,3 +130,17 @@ test("billing cycles become chart slots", () => {
+@@ -130,3 +130,48 @@ test("billing cycles become chart slots", () => {
    assert.equal(Model.topConnections(series[1].connections, 6).map(c => c.name).join(","), "Home,Cafe")
    assert.equal(Model.cycleSeries(Model.limitFor(s, "Elsewhere")).length, 0)
  })
@@ -393,6 +414,37 @@ index d70e809..caad82f 100644
 +  assert.equal(Model.barSpeedText(1500000, 250000, "Icon only", true), "")
 +  assert.equal(Model.barSpeedText(1500000, 250000, "Both", false), "")
 +  assert.deepEqual(Array.from(Model.verticalSpeedLines(1000, 500, "Download", true)), ["↓", "1.0 K/s"])
++  assert.equal(Model.formatBarRate(999.6), "1.0 K/s")
++  assert.equal(Model.formatBarRate(999600), "1.0 M/s")
++  assert.equal(Model.formatBarRate(9960000), "10 M/s")
++})
++
++test("parseProcNetDev and computeLiveRate handle snapshots and edge cases", () => {
++  const procSample = [
++    "Inter-|   Receive                                                |  Transmit",
++    " face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed",
++    "    lo: 6131211    9973    0    0    0     0          0         0  6131211    9973    0    0    0     0       0          0",
++    "  wlo1: 14095736507 11291306    0 1396    0     0          0         0 989726177 2612158    0   42    0     0       0          0"
++  ].join("\n")
++
++  const parsed = Model.parseProcNetDev(procSample, "wlo1")
++  assert.deepEqual([parsed.rx, parsed.tx], [14095736507, 989726177])
++  assert.equal(Model.parseProcNetDev(procSample, "eth0"), null)
++  assert.equal(Model.parseProcNetDev(procSample, ""), null)
++
++  const first = Model.computeLiveRate(null, { rx: 1000, tx: 500 }, 1000)
++  assert.equal(first.ready, false)
++
++  const second = Model.computeLiveRate(first.sample, { rx: 3000, tx: 1000 }, 2000)
++  assert.equal(second.ready, true)
++  assert.equal(second.rxRate, 2000)
++  assert.equal(second.txRate, 500)
++
++  const reset = Model.computeLiveRate(second.sample, { rx: 100, tx: 50 }, 3000)
++  assert.equal(reset.ready, false)
++
++  const stale = Model.computeLiveRate(second.sample, { rx: 9000, tx: 2000 }, 20000)
++  assert.equal(stale.ready, false)
 +})
 diff --git a/ui/HeroSection.qml b/ui/HeroSection.qml
 index 51b3ce8..c2c7dd5 100644
